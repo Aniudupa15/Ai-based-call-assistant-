@@ -124,6 +124,9 @@ async def replay(args) -> int:
 
 
 def main() -> int:
+    # Windows consoles default to a code page that cannot print Hindi or Kannada.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("wav", help="caller audio, 16-bit WAV (stereo: left channel used)")
     p.add_argument("--number", default="9812345678", help="caller ID to present")

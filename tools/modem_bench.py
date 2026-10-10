@@ -149,6 +149,9 @@ def console(ser) -> int:
 
 
 def main() -> int:
+    # Windows consoles default to a code page that cannot print Hindi or Kannada.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--port", required=True)
     p.add_argument("--baud", type=int, default=115200)

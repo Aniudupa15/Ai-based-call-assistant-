@@ -16,6 +16,9 @@ LEVELS = ["low", "normal", "high", "urgent"]
 
 
 def main() -> int:
+    # Windows consoles default to a code page that cannot print Hindi or Kannada.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--db", default="data/calls.db")
     args = ap.parse_args()

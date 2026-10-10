@@ -117,6 +117,9 @@ def check_port(port: int) -> None:
 
 
 def main() -> int:
+    # Windows consoles default to a code page that cannot print Hindi or Kannada.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--config", default="config.yaml")
     args = p.parse_args()
