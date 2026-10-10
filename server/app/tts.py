@@ -82,6 +82,43 @@ class IndicParlerTTS:
         return resample(float_to_int16(audio), self.rate, SAMPLE_RATE)
 
 
+class MmsTTS:
+    """Meta's MMS-TTS voices (facebook/mms-tts-hin, -kan): small VITS models, fast on a CPU."""
+
+    MODELS = {"hi": "facebook/mms-tts-hin", "kn": "facebook/mms-tts-kan"}
+
+    def __init__(self, languages: list[str], device: str = "cpu"):
+        import torch
+        from transformers import AutoTokenizer, VitsModel
+
+        self._torch = torch
+        self.device = device
+        self.voices = {}
+        self._uroman = None
+        for lang in languages:
+            if lang in self.MODELS:
+                name = self.MODELS[lang]
+                model = VitsModel.from_pretrained(name).to(device).eval()
+                self.voices[lang] = (model, AutoTokenizer.from_pretrained(name))
+
+    def _romanise(self, text: str) -> str:
+        if self._uroman is None:
+            import uroman  # some MMS voices are trained on romanised text
+
+            self._uroman = uroman.Uroman()
+        return self._uroman.romanize_string(text)
+
+    def synthesize(self, text: str, language: str) -> np.ndarray:
+        model, tokenizer = self.voices.get(language) or next(iter(self.voices.values()))
+        if getattr(tokenizer, "is_uroman", False):
+            text = self._romanise(text)
+        inputs = tokenizer(text, return_tensors="pt").to(self.device)
+        with self._torch.no_grad():
+            wave = model(**inputs).waveform
+        audio = wave.cpu().numpy().squeeze().astype(np.float32)
+        return resample(float_to_int16(audio), int(model.config.sampling_rate), SAMPLE_RATE)
+
+
 class RoutingTTS:
     def __init__(self, english: TextToSpeech, indic: TextToSpeech | None):
         self.english = english

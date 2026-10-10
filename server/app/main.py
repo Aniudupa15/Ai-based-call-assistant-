@@ -45,14 +45,21 @@ def build_engines(config: Config, owner_name: str) -> Engines:
 
     from .llm import OllamaLLM
     from .stt import IndicConformerSTT, RoutingSTT, WhisperSTT
-    from .tts import IndicParlerTTS, PiperTTS, RoutingTTS
+    from .tts import IndicParlerTTS, MmsTTS, PiperTTS, RoutingTTS
 
     indic = any(l in config.call.languages for l in ("hi", "kn"))
     log.info("loading speech models on %s", m.device)
-    stt = RoutingSTT(WhisperSTT(m.stt_english, m.device),
-                     IndicConformerSTT(m.stt_indic, m.device) if indic else None)
+    stt = RoutingSTT(WhisperSTT(m.stt_english, m.device, m.stt_compute_type),
+                     IndicConformerSTT(m.stt_indic, m.stt_indic_device) if indic else None)
+    indic_langs = [l for l in config.call.languages if l in ("hi", "kn")]
+    if not indic:
+        indic_tts = None
+    elif m.tts_indic == "mms":
+        indic_tts = MmsTTS(indic_langs, m.tts_indic_device)
+    else:
+        indic_tts = IndicParlerTTS(m.tts_indic, m.tts_indic_device)
     tts = RoutingTTS(PiperTTS(m.tts_english),
-                     IndicParlerTTS(m.tts_indic, m.device) if indic else None)
+                     indic_tts)
     loaded = [m.stt_english, m.llm, m.tts_english]
     if indic:
         loaded += [m.stt_indic, m.tts_indic]

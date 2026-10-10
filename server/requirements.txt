@@ -14,4 +14,7 @@ silero-vad>=5.1
 faster-whisper>=1.0
 transformers>=4.40
 piper-tts>=1.2
-git+https://github.com/huggingface/parler-tts.git
+uroman>=1.3            # romanisation some MMS-TTS voices need
+
+# Optional, only with a GPU that has spare memory (set models.tts_indic to the model name):
+# git+https://github.com/huggingface/parler-tts.git

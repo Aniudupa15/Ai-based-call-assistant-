@@ -39,8 +39,13 @@ class ModelsConfig(BaseModel):
     llm: str = "qwen2.5:7b-instruct"
     ollama_url: str = "http://127.0.0.1:11434"
     tts_english: str = "voices/en_US-lessac-medium.onnx"
-    tts_indic: str = "ai4bharat/indic-parler-tts"
+    # "mms" uses Meta's small MMS-TTS voices (fast, runs on the CPU); anything else is
+    # an Indic Parler-TTS model name (better voice, needs a GPU with spare memory).
+    tts_indic: str = "mms"
     device: str = "cuda"
+    stt_compute_type: str = "auto"      # faster-whisper; int8_float16 suits 4 GB GPUs
+    stt_indic_device: str = "cpu"       # IndicConformer; "cuda" if the GPU has room
+    tts_indic_device: str = "cpu"
     vad: Literal["silero", "energy"] = "silero"
 
 

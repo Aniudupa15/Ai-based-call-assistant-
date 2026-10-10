@@ -32,11 +32,18 @@ class SpeechToText(Protocol):
 
 
 class WhisperSTT:
-    def __init__(self, model_name: str, device: str = "cuda"):
+    def __init__(self, model_name: str, device: str = "cuda", compute_type: str = "auto"):
+        try:
+            # On Windows, importing torch first puts its CUDA libraries (cuBLAS, cuDNN)
+            # where CTranslate2 can find them.
+            import torch  # noqa: F401
+        except ImportError:
+            pass
         from faster_whisper import WhisperModel
 
-        compute = "float16" if device == "cuda" else "int8"
-        self.model = WhisperModel(model_name, device=device, compute_type=compute)
+        if compute_type == "auto":
+            compute_type = "int8_float16" if device == "cuda" else "int8"
+        self.model = WhisperModel(model_name, device=device, compute_type=compute_type)
 
     def detect_language(self, audio16k: np.ndarray) -> dict[str, float]:
         if hasattr(self.model, "detect_language"):
