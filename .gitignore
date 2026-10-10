@@ -4,6 +4,8 @@ firmware/main/config.h
 
 # Server runtime data
 server/data/
+server/voices/
+sdcard/
 *.db
 *.db-journal
 
