@@ -8,8 +8,8 @@ httpx>=0.27
 soxr>=0.3
 
 # Speech models (local backend). Install with the CUDA build of torch for your GPU.
-torch>=2.2
-torchaudio>=2.2
+torch>=2.6              # transformers needs torch.accelerator (2.6+)
+torchaudio>=2.6
 silero-vad>=5.1
 faster-whisper>=1.0
 transformers>=4.40

@@ -38,7 +38,7 @@ if [ "$DEV" = 1 ]; then
 else
   if ! python -c 'import torch' 2>/dev/null; then
     echo "Installing PyTorch with CUDA. If this picks the wrong build, see https://pytorch.org/get-started/locally/"
-    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126
   fi
   pip install -r requirements.txt
   pip install sounddevice pyserial websockets   # desk test, bench test, replay tool
