@@ -49,8 +49,15 @@ def build_engines(config: Config, owner_name: str) -> Engines:
 
     indic = any(l in config.call.languages for l in ("hi", "kn"))
     log.info("loading speech models on %s", m.device)
-    stt = RoutingSTT(WhisperSTT(m.stt_english, m.device, m.stt_compute_type),
-                     IndicConformerSTT(m.stt_indic, m.stt_indic_device) if indic else None)
+    indic_stt = None
+    if indic and m.stt_indic:
+        try:
+            indic_stt = IndicConformerSTT(m.stt_indic, m.stt_indic_device)
+        except Exception as e:  # gated model without a login, no network, ...
+            log.warning("IndicConformer not loaded (%s); Whisper transcribes Hindi and "
+                        "Kannada instead. See docs/HOME_SETUP.md to enable it.",
+                        str(e).splitlines()[0][:200])
+    stt = RoutingSTT(WhisperSTT(m.stt_english, m.device, m.stt_compute_type), indic_stt)
     indic_langs = [l for l in config.call.languages if l in ("hi", "kn")]
     if not indic:
         indic_tts = None
@@ -62,7 +69,7 @@ def build_engines(config: Config, owner_name: str) -> Engines:
                      indic_tts)
     loaded = [m.stt_english, m.llm, m.tts_english]
     if indic:
-        loaded += [m.stt_indic, m.tts_indic]
+        loaded += ([m.stt_indic] if indic_stt else []) + [m.tts_indic]
     return Engines(stt=stt, llm=OllamaLLM(m.ollama_url, m.llm), tts=tts,
                    phrases=PhraseCache(tts, config.storage.phrase_dir, owner_name),
                    vad_factory=lambda: make_vad(m.vad), loaded=loaded)
