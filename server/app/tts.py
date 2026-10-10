@@ -1,0 +1,158 @@
+"""Text-to-speech and the cache of fixed phrases.
+
+Piper speaks English and runs faster than real time on the CPU. Indic Parler-TTS
+speaks Hindi and Kannada on the GPU and is slower, so replies are kept short and
+fixed phrases are synthesised once and stored as 8 kHz audio.
+"""
+from __future__ import annotations
+
+import hashlib
+import logging
+from pathlib import Path
+from typing import Protocol
+
+import numpy as np
+import yaml
+
+from .audio import float_to_int16, read_wav, resample, write_wav
+from .protocol import SAMPLE_RATE
+
+log = logging.getLogger(__name__)
+
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+MULTI = "multi"
+MULTI_ORDER = ["en", "kn", "hi"]
+
+
+class TextToSpeech(Protocol):
+    def synthesize(self, text: str, language: str) -> np.ndarray:
+        """Returns int16 mono audio at 8 kHz."""
+
+
+class PiperTTS:
+    def __init__(self, voice_path: str):
+        try:
+            from piper import PiperVoice
+        except ImportError:  # piper-tts 1.2 layout
+            from piper.voice import PiperVoice  # type: ignore
+        self.voice = PiperVoice.load(voice_path)
+        self.rate = int(self.voice.config.sample_rate)
+
+    def synthesize(self, text: str, language: str = "en") -> np.ndarray:
+        if hasattr(self.voice, "synthesize_stream_raw"):  # piper-tts 1.2
+            pcm = b"".join(self.voice.synthesize_stream_raw(text))
+            audio = np.frombuffer(pcm, dtype="<i2")
+        else:  # piper-tts 1.3+: yields AudioChunk objects
+            chunks = [c.audio_int16_array for c in self.voice.synthesize(text)]
+            audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype="<i2")
+        return resample(audio, self.rate, SAMPLE_RATE)
+
+
+class IndicParlerTTS:
+    # Speakers the model card recommends for each language.
+    DESCRIPTIONS = {
+        "hi": "Divya speaks at a moderate pace with a clear, friendly tone. "
+              "The recording is very close-sounding with no background noise.",
+        "kn": "Suresh speaks at a moderate pace with a clear, friendly tone. "
+              "The recording is very close-sounding with no background noise.",
+    }
+
+    def __init__(self, model_name: str, device: str = "cuda"):
+        import torch
+        from parler_tts import ParlerTTSForConditionalGeneration
+        from transformers import AutoTokenizer
+
+        self._torch = torch
+        self.device = device
+        self.model = ParlerTTSForConditionalGeneration.from_pretrained(model_name).to(device)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.desc_tokenizer = AutoTokenizer.from_pretrained(
+            self.model.config.text_encoder._name_or_path)
+        self.rate = int(self.model.config.sampling_rate)
+
+    def synthesize(self, text: str, language: str) -> np.ndarray:
+        desc = self.desc_tokenizer(self.DESCRIPTIONS.get(language, self.DESCRIPTIONS["hi"]),
+                                   return_tensors="pt").to(self.device)
+        prompt = self.tokenizer(text, return_tensors="pt").to(self.device)
+        with self._torch.no_grad():
+            out = self.model.generate(
+                input_ids=desc.input_ids, attention_mask=desc.attention_mask,
+                prompt_input_ids=prompt.input_ids, prompt_attention_mask=prompt.attention_mask)
+        audio = out.cpu().numpy().squeeze().astype(np.float32)
+        return resample(float_to_int16(audio), self.rate, SAMPLE_RATE)
+
+
+class RoutingTTS:
+    def __init__(self, english: TextToSpeech, indic: TextToSpeech | None):
+        self.english = english
+        self.indic = indic
+
+    def synthesize(self, text: str, language: str) -> np.ndarray:
+        if language != "en" and self.indic is not None:
+            return self.indic.synthesize(text, language)
+        return self.english.synthesize(text, language)
+
+
+def load_phrases(path: Path | None = None) -> dict[str, dict[str, str]]:
+    with open(path or PROMPTS_DIR / "phrases.yaml", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+class PhraseCache:
+    """Fixed phrases per language, stored as 8 kHz WAV.
+
+    File names carry a hash of the text, so editing phrases.yaml or the owner's
+    name makes the next build synthesise them again.
+    """
+
+    def __init__(self, tts: TextToSpeech, cache_dir: str | Path, owner_name: str,
+                 phrases: dict[str, dict[str, str]] | None = None):
+        self.tts = tts
+        self.dir = Path(cache_dir)
+        self.owner_name = owner_name
+        self.phrases = phrases or load_phrases()
+        self._mem: dict[tuple[str, str], np.ndarray] = {}
+
+    def set_owner(self, name: str) -> None:
+        """The owner's name is part of the greeting; a new name means new audio."""
+        if name != self.owner_name:
+            self.owner_name = name
+            self._mem.clear()
+
+    def text(self, key: str, language: str) -> str:
+        if language == MULTI:
+            return " ".join(self.text(key, l) for l in MULTI_ORDER if l in self.phrases[key])
+        entry = self.phrases[key]
+        return entry.get(language, entry["en"]).format(owner_name=self.owner_name)
+
+    def _path(self, key: str, language: str) -> Path:
+        digest = hashlib.sha1(self.text(key, language).encode()).hexdigest()[:10]
+        return self.dir / language / f"{key}-{digest}.wav"
+
+    def get(self, key: str, language: str) -> np.ndarray:
+        if language == MULTI:
+            gap = np.zeros(int(0.3 * SAMPLE_RATE), dtype="<i2")
+            parts = []
+            for l in MULTI_ORDER:
+                if l in self.phrases[key]:
+                    parts += [self.get(key, l), gap]
+            return np.concatenate(parts[:-1]) if parts else np.zeros(0, dtype="<i2")
+        mem_key = (key, language)
+        if mem_key in self._mem:
+            return self._mem[mem_key]
+        path = self._path(key, language)
+        if path.exists():
+            audio, rate = read_wav(path)
+            audio = resample(audio, rate, SAMPLE_RATE)
+        else:
+            audio = self.tts.synthesize(self.text(key, language), language)
+            write_wav(path, audio)
+        self._mem[mem_key] = audio
+        return audio
+
+    def build(self, languages: list[str]) -> None:
+        for key, entry in self.phrases.items():
+            for language in languages:
+                if language in entry:
+                    self.get(key, language)
+        log.info("phrase cache ready in %s", self.dir)

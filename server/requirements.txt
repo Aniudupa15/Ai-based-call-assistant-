@@ -1,0 +1,17 @@
+# Core service
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+pyyaml>=6.0
+numpy>=1.26
+httpx>=0.27
+soxr>=0.3
+
+# Speech models (local backend). Install with the CUDA build of torch for your GPU.
+torch>=2.2
+torchaudio>=2.2
+silero-vad>=5.1
+faster-whisper>=1.0
+transformers>=4.40
+piper-tts>=1.2
+git+https://github.com/huggingface/parler-tts.git
