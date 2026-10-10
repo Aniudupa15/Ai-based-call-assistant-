@@ -1,0 +1,18 @@
+# systemd unit for the PC server. install_server.sh fills in @USER@ and @DIR@.
+[Unit]
+Description=Personal AI call assistant server
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@DIR@/server
+ExecStart=@DIR@/server/.venv/bin/python -m app.main --config @DIR@/server/config.yaml
+Restart=always
+RestartSec=5
+# The GPU driver may need a moment after boot.
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target
