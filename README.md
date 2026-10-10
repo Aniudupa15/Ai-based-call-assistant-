@@ -7,6 +7,9 @@ An ESP32 bridges the call audio to your PC, which runs speech recognition, a loc
 language model and speech synthesis. Nothing leaves your own equipment apart from
 the phone network that carries the call.
 
+**Setting it up at home? Follow [`docs/HOME_SETUP.md`](docs/HOME_SETUP.md)** — a step-by-step
+checklist from first install to a real forwarded call.
+
 The full requirements and design are in
 [`docs/AI-Call-Assistant-Design-Document.pdf`](docs/AI-Call-Assistant-Design-Document.pdf).
 The ESP32 ↔ PC protocol is in [`docs/protocol.md`](docs/protocol.md).
@@ -35,8 +38,14 @@ server/     Python service on the PC
   prompts/    system prompt, post-call prompt, fixed phrases in three languages
   tests/      pytest suite, including whole calls driven over the WebSocket
 android/    Kotlin + Jetpack Compose app: call history, record view, rules, status, settings
-docs/       design document and protocol
-tools/      replay_call.py (feed a recording into the server), make_greetings.py
+docs/       design document, protocol, home setup checklist
+deploy/     install_server.sh (venv, packages, tokens, systemd service), WireGuard setup
+tools/      doctor.py        checks the PC is ready and suggests model sizes for your GPU
+            desk_test.py     phase 1: talk to the bot with the PC's mic and speakers
+            modem_bench.py   phase 2: module checks over a USB-serial adapter
+            replay_call.py   feed a recorded call into the server without hardware
+            make_greetings.py  phrase cache and microSD greeting files
+            timing_report.py / severity_report.py  check the reply-delay and severity targets
 ```
 
 ## Quick start: the server without any hardware
@@ -100,7 +109,8 @@ idf.py -C firmware/test flash monitor    # on the ESP32
 
 ## Android app
 
-Open `android/` in Android Studio, build, and sideload the debug APK (minimum Android 10).
+CI builds the debug APK on every push: download `call-assistant-debug-apk` from the
+GitHub Actions run and sideload it (minimum Android 10). Or open `android/` in Android Studio.
 On first launch, Settings asks for the PC's home address, its WireGuard address and the
 app token. The Settings screen also dials the call-forwarding codes for the module's
 number (`**61*`, `**67*`, `**62*`) and cancels them all (`##002#`).
