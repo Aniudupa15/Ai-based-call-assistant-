@@ -56,7 +56,7 @@ if ($Dev) {
     $hasTorch = & $venvPy -c "import importlib.util; print(importlib.util.find_spec('torch') is not None)"
     if ($hasTorch -ne "True") {
         Write-Host "Installing PyTorch with CUDA. If this picks the wrong build, see https://pytorch.org/get-started/locally/"
-        & $venvPy -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+        & $venvPy -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126
         Check "installing PyTorch"
     }
     & $venvPy -m pip install -r requirements.txt
