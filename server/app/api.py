@@ -225,6 +225,8 @@ def build_router(app_state) -> APIRouter:
         if not db.get_rule(rule_id):
             raise ApiError(404, "not_found", f"no rule {rule_id}")
         fields = body.model_dump(exclude_unset=True)
+        if fields.get("severity_floor") == "":
+            fields["severity_floor"] = None
         try:
             db.update_rule(rule_id, **fields)
         except sqlite3.IntegrityError:
