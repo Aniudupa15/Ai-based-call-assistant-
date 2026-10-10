@@ -86,6 +86,9 @@ def test_groups_and_rules(config):
         assert r.json()["rule_id"] == rules["family"]["id"]
         assert c.put(f"/api/rules/{rules['unknown']['id']}", headers=APP,
                      json={"action": "dance"}).status_code == 422
+        fam = rules["family"]["id"]
+        assert c.put(f"/api/rules/{fam}", headers=APP,
+                     json={"severity_floor": ""}).json()["severity_floor"] is None
 
 
 def test_settings(config):

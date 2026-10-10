@@ -1,7 +1,7 @@
 """Request and response bodies for the app API."""
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -34,7 +34,7 @@ class RuleIn(BaseModel):
     language_hint: Optional[Language] = None
     extra_prompt: Optional[str] = Field(default=None, max_length=1000)
     max_seconds: Optional[int] = Field(default=None, ge=30, le=600)
-    severity_floor: Optional[Severity] = None
+    severity_floor: Optional[Union[Severity, Literal[""]]] = None  # "" clears it
 
 
 class SettingsIn(BaseModel):
