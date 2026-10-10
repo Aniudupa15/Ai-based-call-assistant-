@@ -67,12 +67,24 @@ class WhisperSTT:
 class IndicConformerSTT:
     """ai4bharat/indic-conformer-600m-multilingual, CTC decoding."""
 
-    def __init__(self, model_name: str, device: str = "cuda"):
+    def __init__(self, model_name: str, device: str = "cuda", model_dir: str = "data/models"):
+        from pathlib import Path
+
         import torch
         from transformers import AutoModel
 
         self._torch = torch
-        self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+        path = Path(model_name)
+        if not path.exists():
+            # The model's ONNX weights are separate files. onnxruntime refuses to load them
+            # through the Hugging Face cache's links, so download into a plain folder.
+            from huggingface_hub import snapshot_download
+
+            path = Path(model_dir) / model_name.replace("/", "--")
+            if not (path / "config.json").exists():
+                log.info("downloading %s to %s", model_name, path)
+                snapshot_download(model_name, local_dir=str(path))
+        self.model = AutoModel.from_pretrained(str(path), trust_remote_code=True)
         if hasattr(self.model, "to"):
             try:
                 self.model = self.model.to(device)
