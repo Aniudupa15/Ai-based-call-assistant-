@@ -117,6 +117,9 @@ async def run(args) -> int:
 
 
 def main() -> int:
+    # Windows consoles default to a code page that cannot print Hindi or Kannada.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--config", default="config.yaml")
     p.add_argument("--number", default="+919800000001", help="caller ID to pretend, for rules")

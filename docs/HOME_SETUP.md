@@ -1,5 +1,11 @@
 # Home setup checklist
 
+**On Windows:** run commands in PowerShell, use `deploy\install_server.ps1` instead of
+`install_server.sh`, `.venv\Scripts\python` instead of `.venv/bin/python`, and `COM3`
+(see Device Manager) instead of `/dev/ttyUSB0`. For the boot service, run
+`install_server.ps1 -Service` as Administrator; for WireGuard, use the WireGuard for
+Windows app instead of the script.
+
 Work through this in order. Each step says what to run and what you should see.
 Steps 1–4 need only the PC and your phone; the module comes in at step 6.
 Tick the boxes as you go; if a step fails, stop there and note the output.
