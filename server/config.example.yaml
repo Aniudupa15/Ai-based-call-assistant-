@@ -22,13 +22,17 @@ call:
 
 models:
   backend: local                 # local | fake (fake needs no GPU; for development and tests)
+  # Sized for a 4 GB GPU (e.g. GTX 1650). tools/doctor.py suggests sizes for yours.
   stt_english: "small"           # faster-whisper model name
   stt_indic: "ai4bharat/indic-conformer-600m-multilingual"
-  llm: "qwen2.5:7b-instruct"     # Ollama model name
+  llm: "qwen2.5:3b-instruct"     # Ollama model name; 7b needs about 6 GB of GPU memory
   ollama_url: "http://127.0.0.1:11434"
   tts_english: "voices/en_US-lessac-medium.onnx"   # Piper voice file
-  tts_indic: "ai4bharat/indic-parler-tts"
-  device: "cuda"
+  tts_indic: "mms"               # mms (fast, CPU) or ai4bharat/indic-parler-tts (GPU)
+  device: "cuda"                 # Whisper on the GPU
+  stt_compute_type: "auto"       # int8_float16 on the GPU, int8 on the CPU
+  stt_indic_device: "cpu"        # IndicConformer for Hindi/Kannada
+  tts_indic_device: "cpu"
   vad: silero                    # silero | energy
 
 storage:

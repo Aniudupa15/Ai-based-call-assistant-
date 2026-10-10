@@ -56,15 +56,18 @@ def suggest_models(gb: float | None) -> None:
     elif gb >= 11:
         tip = "faster-whisper 'small', a 7-8B instruct model at 4-bit (e.g. qwen2.5:7b-instruct), Indic Parler-TTS"
     elif gb >= 7:
-        tip = "faster-whisper 'small', a 3-4B instruct model (e.g. qwen2.5:3b-instruct); Indic Parler-TTS may be tight"
+        tip = "faster-whisper 'small', a 3-4B instruct model (e.g. qwen2.5:3b-instruct), tts_indic: mms"
+    elif gb >= 3.5:
+        tip = ("faster-whisper 'small' (int8_float16), qwen2.5:3b-instruct, tts_indic: mms, "
+               "stt_indic_device: cpu (this is the default config)")
     else:
-        tip = "faster-whisper 'base', a 1.5-3B model; consider English-only TTS on the GPU and Parler on CPU"
+        tip = "faster-whisper 'base', qwen2.5:1.5b-instruct, tts_indic: mms, everything else on the CPU"
     report("ok", "Suggested model sizes", tip)
 
 
 def check_packages(local: bool) -> None:
     for mod, why in [("faster_whisper", "speech-to-text"), ("silero_vad", "voice activity"),
-                     ("piper", "English voice"), ("parler_tts", "Hindi/Kannada voice"),
+                     ("piper", "English voice"), ("uroman", "Hindi/Kannada voice (MMS)"),
                      ("transformers", "IndicConformer"), ("soxr", "resampling")]:
         try:
             __import__(mod)
