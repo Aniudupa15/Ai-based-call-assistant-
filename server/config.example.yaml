@@ -1,0 +1,43 @@
+# Copy to config.yaml and fill in. config.yaml is git-ignored.
+owner:
+  name: "Your name"
+  number: "+91xxxxxxxxxx"        # main Airtel number, for SMS summaries
+
+network:
+  listen: "0.0.0.0"
+  port: 8765
+  esp_token: "change-me"
+  app_token: "change-me-too"
+
+call:
+  max_seconds: 180
+  speech_start_ms: 200
+  end_of_turn_ms: 600
+  barge_in_ms: 300
+  silence_prompt_s: 6
+  filler_after_ms: 1200          # play "one moment" if no reply sentence by then
+  max_reply_sentences: 2
+  languages: [en, hi, kn]
+  default_language: en
+
+models:
+  backend: local                 # local | fake (fake needs no GPU; for development and tests)
+  stt_english: "small"           # faster-whisper model name
+  stt_indic: "ai4bharat/indic-conformer-600m-multilingual"
+  llm: "qwen2.5:7b-instruct"     # Ollama model name
+  ollama_url: "http://127.0.0.1:11434"
+  tts_english: "voices/en_US-lessac-medium.onnx"   # Piper voice file
+  tts_indic: "ai4bharat/indic-parler-tts"
+  device: "cuda"
+  vad: silero                    # silero | energy
+
+storage:
+  database: "data/calls.db"
+  audio_dir: "data/audio"
+  phrase_dir: "data/phrases"
+  retention_days: 30
+
+notify:
+  sms_urgent: true
+  sms_high_after_minutes: 10
+  sms_normal_after_minutes: 60

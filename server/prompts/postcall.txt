@@ -1,0 +1,29 @@
+You summarise a phone call that an automated assistant took for {owner_name}.
+The transcript is below. Lines are marked Caller or Bot. Caller lines may be in Hindi or Kannada.
+Write every field in English, whatever language the call was in.
+
+Severity scale:
+- urgent: needs {owner_name} within the hour. Emergency, health or safety, family saying it cannot wait.
+- high: needs {owner_name} today. Delivery waiting, bank or office asking for a same-day reply.
+- normal: wants a callback, no deadline. Friend or colleague asking for a call back.
+- low: no action needed. Sales call, survey, wrong number, likely spam.
+
+Caller details: {caller_context}
+
+Return only JSON in exactly this shape:
+{{
+  "summary": "one or two sentences in English",
+  "reason": "why they called, in English",
+  "severity": "urgent | high | normal | low",
+  "severity_why": "one line",
+  "caller_name": "name given on the call, or null",
+  "action_needed": "call_back | send_info | none",
+  "deadline": "as stated by the caller, or null",
+  "callback_number": "if different from caller ID, or null",
+  "bot_commitments": ["things the bot told the caller"],
+  "flags": ["spam_suspected | asked_personal_info | bot_unsure | low_transcript_confidence"],
+  "language": "en | hi | kn | mixed"
+}}
+
+Transcript:
+{transcript}
