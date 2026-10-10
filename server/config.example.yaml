@@ -39,6 +39,7 @@ storage:
   database: "data/calls.db"
   audio_dir: "data/audio"
   phrase_dir: "data/phrases"
+  model_dir: "data/models"
   retention_days: 30
 
 notify:

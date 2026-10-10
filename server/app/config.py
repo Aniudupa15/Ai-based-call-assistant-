@@ -53,6 +53,7 @@ class StorageConfig(BaseModel):
     database: str = "data/calls.db"
     audio_dir: str = "data/audio"
     phrase_dir: str = "data/phrases"
+    model_dir: str = "data/models"      # models that must sit in a plain folder (IndicConformer)
     retention_days: int = 30
 
 

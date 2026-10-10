@@ -52,7 +52,8 @@ def build_engines(config: Config, owner_name: str) -> Engines:
     indic_stt = None
     if indic and m.stt_indic:
         try:
-            indic_stt = IndicConformerSTT(m.stt_indic, m.stt_indic_device)
+            indic_stt = IndicConformerSTT(m.stt_indic, m.stt_indic_device,
+                                          config.storage.model_dir)
         except Exception as e:  # gated model without a login, no network, ...
             log.warning("IndicConformer not loaded (%s); Whisper transcribes Hindi and "
                         "Kannada instead. See docs/HOME_SETUP.md to enable it.",
