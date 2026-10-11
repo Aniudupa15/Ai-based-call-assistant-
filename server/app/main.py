@@ -47,7 +47,7 @@ def build_engines(config: Config, owner_name: str) -> Engines:
 
     from .llm import OllamaLLM
     from .stt import IndicConformerSTT, RoutingSTT, WhisperSTT
-    from .tts import IndicParlerTTS, KokoroTTS, MmsTTS, PiperTTS, RoutingTTS
+    from .tts import FallbackTTS, IndicParlerTTS, KokoroTTS, MmsTTS, PiperTTS, RoutingTTS
 
     indic = any(l in config.call.languages for l in ("hi", "kn"))
     llm = OllamaLLM(m.ollama_url, m.llm)
@@ -86,6 +86,13 @@ def build_engines(config: Config, owner_name: str) -> Engines:
         indic_tts = IndicParlerTTS(m.tts_indic, m.tts_indic_device)
     say_as = {owner_name: config.owner.say_as} if config.owner.say_as else {}
     tts = RoutingTTS(english, indic_tts, per_language, say_as)
+    sarvam = sarvam_tts(config)
+    if sarvam is not None:
+        # Sarvam speaks the languages it is set for; the local voices stay as backup.
+        local = tts
+        cloud = {l: FallbackTTS(sarvam, local) for l in config.sarvam.languages}
+        english = cloud.get("en", english)
+        tts = RoutingTTS(english, indic_tts, {**per_language, **cloud}, say_as)
     loaded = [m.stt_english, m.llm, m.tts_english]
     if indic:
         loaded += ([m.stt_indic] if indic_stt else []) + [m.tts_indic]
@@ -97,12 +104,31 @@ def build_engines(config: Config, owner_name: str) -> Engines:
                    vad_factory=lambda: make_vad(m.vad), loaded=loaded)
 
 
+def sarvam_tts(config: Config):
+    """The Sarvam voice if a key is set (config or SARVAM_API_KEY), else None."""
+    import os
+
+    from .tts import SarvamTTS
+
+    sv = config.sarvam
+    key = sv.api_key or os.environ.get("SARVAM_API_KEY", "")
+    if not key:
+        return None
+    log.info("using Sarvam %s voice '%s' for %s", sv.model, sv.speaker, ", ".join(sv.languages))
+    return SarvamTTS(key, sv.model, sv.speaker, sv.pace)
+
+
 def voice_tag(config: Config) -> str:
     """Names the phrase-cache folder after the voices, so a new voice means new audio."""
     import hashlib
 
     m = config.models
-    key = "|".join([m.tts_english, m.tts_hindi, m.tts_indic, config.owner.say_as])
+    import os
+
+    sv = config.sarvam
+    sarvam = (f"sarvam:{sv.model}:{sv.speaker}:{sv.pace}:{','.join(sv.languages)}"
+              if sv.api_key or os.environ.get("SARVAM_API_KEY") else "")
+    key = "|".join([m.tts_english, m.tts_hindi, m.tts_indic, config.owner.say_as, sarvam])
     return hashlib.sha1(key.encode()).hexdigest()[:8]
 
 

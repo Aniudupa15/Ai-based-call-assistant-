@@ -66,6 +66,15 @@ class ModelsConfig(BaseModel):
     vad: Literal["silero", "energy"] = "silero"
 
 
+class SarvamConfig(BaseModel):
+    """Sarvam AI voices (Indian English, Hindi, Kannada). Empty api_key: not used."""
+    api_key: str = ""                   # or set the SARVAM_API_KEY environment variable
+    model: str = "bulbul:v3"
+    speaker: str = "priya"              # e.g. priya, ritu (women); shubh, aditya (men)
+    pace: float = 1.0
+    languages: list[str] = Field(default_factory=lambda: ["en", "hi", "kn"])
+
+
 class StorageConfig(BaseModel):
     database: str = "data/calls.db"
     audio_dir: str = "data/audio"
@@ -85,6 +94,7 @@ class Config(BaseModel):
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     call: CallConfig = Field(default_factory=CallConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
+    sarvam: SarvamConfig = Field(default_factory=SarvamConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     # Sends bot audio paced in real time. Tests switch it off to run fast.

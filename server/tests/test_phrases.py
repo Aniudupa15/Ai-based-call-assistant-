@@ -65,3 +65,48 @@ def test_kokoro_hindi_speaker_reads_english_with_english_rules(monkeypatch):
     KokoroTTS({"en": "hf_alpha", "hi": "hf_beta"})
     KokoroTTS({"en": "bf_emma"})
     assert made == ["a", "h", "b"]
+
+
+def test_sarvam_request_and_fallback():
+    import base64
+    import io
+    import json
+    import wave
+
+    import httpx
+    import numpy as np
+
+    from app.tts import FallbackTTS, SarvamTTS
+
+    def wav_b64(n):
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(8000)
+            w.writeframes(np.full(n, 100, dtype="<i2").tobytes())
+        return base64.b64encode(buf.getvalue()).decode()
+
+    seen = []
+
+    def handler(request):
+        seen.append((request.headers["api-subscription-key"], json.loads(request.content)))
+        return httpx.Response(200, json={"request_id": "x", "audios": [wav_b64(800)]})
+
+    tts = SarvamTTS("k123", speaker="priya", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    audio = tts.synthesize("ನಮಸ್ಕಾರ", "kn")
+    assert len(audio) == 800
+    key, body = seen[0]
+    assert key == "k123" and body["target_language_code"] == "kn-IN"
+    assert body["speaker"] == "priya" and body["speech_sample_rate"] == 8000
+    tts.synthesize("ನಮಸ್ಕಾರ", "kn")
+    assert len(seen) == 1                 # repeated line: not sent again
+
+    down = SarvamTTS("k", client=httpx.Client(transport=httpx.MockTransport(
+        lambda r: httpx.Response(500, text="boom"))))
+
+    class Local:
+        def synthesize(self, text, language):
+            return np.zeros(5, dtype="<i2")
+
+    assert len(FallbackTTS(down, Local()).synthesize("Hello", "en")) == 5
