@@ -162,6 +162,23 @@ SCENARIOS: list[Scenario] = [
         Say("It is about the parcel."),
         WaitBot(),
     ]),
+    Scenario("accented_english_low_conf", "unsure English (conf 0.42, heard as Finnish): no language question", [
+        WaitBot(),
+        Say("Amazon delivery, there is a parcel for him.", confidence=0.42,
+            detected={"fi": 0.38, "en": 0.3}),
+        WaitBot(),
+        Say("This is Ravi."),
+        WaitBot(),
+    ]),
+    Scenario("language_answer_canada", "asked the language, 'Kannada' heard as 'Canada'", [
+        WaitBot(),
+        Say("Mumble mumble parcel.", confidence=0.2, detected={"fi": 0.4, "en": 0.3}),
+        WaitBot(),
+        Say("Canada.", "kn", detected={"en": 0.6, "kn": 0.3}, garbled="Canada."),
+        WaitBot(),
+        Say("ನಾನು ರವಿ, ಪಾರ್ಸೆಲ್ ಬಗ್ಗೆ.", "kn", detected={"kn": 0.8}),
+        WaitBot(),
+    ]),
     Scenario("hindi_caller", "Hindi detected confidently: replies in Hindi", [
         WaitBot(),
         Say("नमस्ते, मैं रमेश बोल रहा हूँ, पार्सल के बारे में।", "hi",

@@ -42,6 +42,11 @@ class PostCallResult(BaseModel):
     def _lower(cls, v):
         return v.strip().lower() if isinstance(v, str) else v
 
+    @field_validator("summary", "reason", "severity_why", mode="before")
+    @classmethod
+    def _text(cls, v):
+        return "" if v is None else v
+
     @field_validator("caller_name", "deadline", "callback_number", mode="before")
     @classmethod
     def _nullish(cls, v):

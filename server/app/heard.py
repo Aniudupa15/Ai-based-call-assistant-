@@ -61,12 +61,19 @@ def is_echo(text: str, recent_bot: list[str]) -> bool:
     return False
 
 
-def language_request(text: str) -> str | None:
-    """'Kannada', 'Hindi please', 'ಕನ್ನಡ' -> a language code; only for short answers."""
+# How Whisper writes the answers when it decodes them as English.
+MISHEARD_ANSWERS = {"kn": ("canada", "kannad", "kanad", "cannada"), "hi": ("indi", "hindee")}
+
+
+def language_request(text: str, after_question: bool = False) -> str | None:
+    """'Kannada', 'Hindi please', 'ಕನ್ನಡ' -> a language code; only for short answers.
+    after_question: just after "Kannada, Hindi or English?", where "Canada" means Kannada."""
     norm = normalise(text)
     if not norm or len(norm.split()) > 5:
         return None
-    found = [code for code, words in LANGUAGE_WORDS.items()
+    words_for = {code: words + (MISHEARD_ANSWERS.get(code, ()) if after_question else ())
+                 for code, words in LANGUAGE_WORDS.items()}
+    found = [code for code, words in words_for.items()
              if any(w in norm for w in words)]
     return found[0] if len(found) == 1 else None
 
