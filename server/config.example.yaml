@@ -45,6 +45,7 @@ models:
   device: "cuda"                 # Whisper on the GPU
   stt_compute_type: "auto"       # int8_float16 on the GPU, int8 on the CPU
   stt_indic_device: "cpu"        # IndicConformer for Hindi/Kannada
+  lid: "speechbrain/lang-id-voxlingua107-ecapa"   # tells Kannada/Hindi/English apart (CPU)
   tts_indic_device: "cpu"
   vad: silero                    # silero | energy
 

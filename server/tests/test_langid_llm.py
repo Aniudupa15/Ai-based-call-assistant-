@@ -60,3 +60,43 @@ def test_end_marker_variants():
     assert strip_end_token("Bye. <END>") == ("Bye.", True)
     assert strip_end_token("Bye. END") == ("Bye.", True)
     assert strip_end_token("Call by the end of the month.") == ("Call by the end of the month.", False)
+
+
+def test_language_detector_decides_and_whisper_transcribes_once():
+    import numpy as np
+
+    from app.stt import RoutingSTT, Transcript
+
+    class Whisper:
+        def __init__(self):
+            self.calls = []
+
+        def detect_language(self, audio):
+            self.calls.append("detect")
+            return {"el": 0.4, "en": 0.3}
+
+        def transcribe(self, audio, language):
+            self.calls.append(f"transcribe-{language}")
+            return Transcript("hello", language, 0.8)
+
+    class Indic:
+        def transcribe(self, audio, language):
+            return Transcript("ನಾನು ರವಿ", language, None)
+
+    class Lid:
+        def probs(self, audio, languages):
+            return {"kn": 0.9, "en": 0.05, "hi": 0.05}
+
+    w = Whisper()
+    stt = RoutingSTT(w, Indic(), Lid(), ["en", "hi", "kn"])
+    audio = np.zeros(16000, dtype=np.float32)
+    assert stt.detect_language(audio)["kn"] == 0.9
+    assert stt.transcribe(audio, "kn").text == "ನಾನು ರವಿ"
+    assert w.calls == []                     # Whisper not needed for Kannada at all
+
+    class Broken:
+        def probs(self, audio, languages):
+            raise RuntimeError("x")
+
+    stt = RoutingSTT(w, Indic(), Broken(), ["en", "hi", "kn"])
+    assert stt.detect_language(audio) == {"el": 0.4, "en": 0.3}   # falls back to Whisper

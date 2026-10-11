@@ -138,9 +138,14 @@ class RoutingSTT:
     # 3-second test clip, Whisper handles Hindi and Kannada instead.
     INDIC_MAX_S = 2.5
 
-    def __init__(self, whisper: WhisperSTT, indic: IndicConformerSTT | None):
+    def __init__(self, whisper: WhisperSTT, indic: IndicConformerSTT | None,
+                 lid=None, languages: list[str] | None = None):
         self.whisper = whisper
         self.indic = indic
+        # A spoken-language detector (app/lid.py) decides the language when present;
+        # Whisper then only transcribes English, in one pass.
+        self.lid = lid
+        self.languages = languages or ["en", "hi", "kn"]
         self.timings: dict[str, float] = {}
 
     def warm(self) -> dict[str, float]:
@@ -149,6 +154,16 @@ class RoutingSTT:
         import time
 
         clip = (np.random.default_rng(0).normal(0, 0.02, 48000)).astype(np.float32)
+        if self.lid is not None:
+            try:
+                self.lid.probs(clip, self.languages)
+                t0 = time.monotonic()
+                self.lid.probs(clip, self.languages)
+                self.timings["lid_s"] = round(time.monotonic() - t0, 2)
+            except Exception as e:
+                log.warning("language detector failed its test run (%s); Whisper decides "
+                            "the language instead", e)
+                self.lid = None
         t0 = time.monotonic()
         self.whisper.detect_language(clip)
         self.whisper.transcribe(clip, "en")
@@ -173,6 +188,14 @@ class RoutingSTT:
         return self.timings
 
     def detect_language(self, audio16k: np.ndarray) -> dict[str, float]:
+        if self.lid is not None:
+            try:
+                probs = self.lid.probs(audio16k, self.languages)
+                if probs:
+                    log.info("language: %s", {k: round(v, 2) for k, v in probs.items()})
+                    return probs
+            except Exception as e:
+                log.warning("language detector failed (%s); asking Whisper", e)
         return self.whisper.detect_language(audio16k)
 
     def transcribe(self, audio16k: np.ndarray, language: str) -> Transcript:

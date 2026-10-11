@@ -15,7 +15,8 @@ faster-whisper>=1.0
 transformers>=4.40
 piper-tts>=1.2
 kokoro>=0.9.4          # natural English and Hindi voices (models.tts_english: kokoro:af_heart)
-uroman>=1.3            # romanisation some MMS-TTS voices need
+uroman>=1.3
+speechbrain>=1.0       # spoken-language detection (English / Hindi / Kannada)            # romanisation some MMS-TTS voices need
 
 # Optional, only with a GPU that has spare memory (set models.tts_indic to the model name):
 # git+https://github.com/huggingface/parler-tts.git

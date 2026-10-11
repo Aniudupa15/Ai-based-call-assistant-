@@ -33,6 +33,8 @@ class CallConfig(BaseModel):
     max_reply_sentences: int = 3       # extra sentences are not spoken; a goodbye always is
     languages: list[str] = Field(default_factory=lambda: ["en", "hi", "kn"])
     default_language: str = "en"
+    # How sure the language detector must be to switch from the current language.
+    language_switch_threshold: float = 0.6
     # Languages of the fixed recorded lines (greeting, "could you repeat", goodbye, the
     # voicemail greeting). The conversation itself still follows the caller's language.
     phrase_languages: list[str] = Field(default_factory=lambda: ["en"])
@@ -65,6 +67,9 @@ class ModelsConfig(BaseModel):
     device: str = "cuda"
     stt_compute_type: str = "auto"      # faster-whisper; int8_float16 suits 4 GB GPUs
     stt_indic_device: str = "cpu"       # IndicConformer; "cuda" if the GPU has room
+    # Spoken-language detector (SpeechBrain VoxLingua107, CPU). "" leaves it to Whisper,
+    # which often mistakes Kannada for other languages.
+    lid: str = "speechbrain/lang-id-voxlingua107-ecapa"
     tts_indic_device: str = "cpu"
     vad: Literal["silero", "energy"] = "silero"
 
