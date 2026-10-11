@@ -163,6 +163,75 @@ class KokoroTTS:
         return resample(float_to_int16(audio), self.RATE, SAMPLE_RATE)
 
 
+class SarvamTTS:
+    """Sarvam AI's Bulbul voices (api.sarvam.ai): natural Indian voices for English,
+    Hindi and Kannada. Needs internet and an API key; only the bot's own words are
+    sent, never the caller's audio. Fixed lines are cached on disk, so most calls
+    only send the few lines that contain the caller's name."""
+
+    URL = "https://api.sarvam.ai/text-to-speech"
+    LANG = {"en": "en-IN", "hi": "hi-IN", "kn": "kn-IN"}
+
+    def __init__(self, api_key: str, model: str = "bulbul:v3", speaker: str = "priya",
+                 pace: float = 1.0, speakers: dict[str, str] | None = None,
+                 timeout: float = 5.0, client=None):
+        import httpx
+
+        if not api_key:
+            raise ValueError("no Sarvam API key (sarvam.api_key or SARVAM_API_KEY)")
+        self.model = model
+        self.speaker = speaker
+        self.speakers = speakers or {}
+        self.pace = pace
+        self._client = client or httpx.Client(timeout=timeout)
+        self._headers = {"api-subscription-key": api_key}
+        self._memo: dict[tuple[str, str], np.ndarray] = {}
+
+    def synthesize(self, text: str, language: str = "en") -> np.ndarray:
+        key = (text, language)
+        if key in self._memo:
+            return self._memo[key]
+        import base64
+        import io
+        import wave
+
+        body = {"text": text, "target_language_code": self.LANG.get(language, "en-IN"),
+                "speaker": self.speakers.get(language, self.speaker), "model": self.model,
+                "pace": self.pace, "speech_sample_rate": SAMPLE_RATE}
+        resp = self._client.post(self.URL, json=body, headers=self._headers)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Sarvam TTS {resp.status_code}: {resp.text[:200]}")
+        parts = []
+        for b64 in resp.json().get("audios", []):
+            with wave.open(io.BytesIO(base64.b64decode(b64))) as w:
+                pcm = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+                if w.getnchannels() > 1:
+                    pcm = pcm.reshape(-1, w.getnchannels())[:, 0]
+                parts.append(resample(pcm, w.getframerate(), SAMPLE_RATE))
+        if not parts:
+            raise RuntimeError("Sarvam TTS returned no audio")
+        audio = np.concatenate(parts).astype("<i2")
+        if len(self._memo) < 200:
+            self._memo[key] = audio
+        return audio
+
+
+class FallbackTTS:
+    """Tries the cloud voice first; if it fails (no internet, quota, a slow reply),
+    the local voice speaks instead so the caller never hears silence."""
+
+    def __init__(self, primary: TextToSpeech, fallback: TextToSpeech):
+        self.primary = primary
+        self.fallback = fallback
+
+    def synthesize(self, text: str, language: str) -> np.ndarray:
+        try:
+            return self.primary.synthesize(text, language)
+        except Exception as e:
+            log.warning("cloud voice failed (%s); using the local voice", str(e)[:200])
+            return self.fallback.synthesize(text, language)
+
+
 class RoutingTTS:
     """Picks the engine by language. say_as rewrites words before English synthesis,
     e.g. {"Anirudha": "Uh-nee-rood-ha"} so a name is pronounced the way it should be."""
@@ -176,12 +245,13 @@ class RoutingTTS:
         self.say_as = {k: v for k, v in (say_as or {}).items() if k and v}
 
     def synthesize(self, text: str, language: str) -> np.ndarray:
+        if language == "en":
+            for word, spoken in self.say_as.items():
+                text = text.replace(word, spoken)
         if language in self.per_language:
             return self.per_language[language].synthesize(text, language)
         if language != "en" and self.indic is not None:
             return self.indic.synthesize(text, language)
-        for word, spoken in self.say_as.items():
-            text = text.replace(word, spoken)
         return self.english.synthesize(text, language)
 
 
