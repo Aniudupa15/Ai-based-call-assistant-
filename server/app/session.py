@@ -598,7 +598,8 @@ class Session:
         if not (self._caller_turns == 0 and self.hint):
             probs = await asyncio.to_thread(stt.detect_language, audio16)
         choice = choose_language(probs, self.allowed, self.language, self.hint,
-                                 self._caller_turns, locked=self._language_locked)
+                                 self._caller_turns, locked=self._language_locked,
+                                 threshold=self.config.call.language_switch_threshold)
         transcript = await asyncio.to_thread(stt.transcribe, audio16, choice.language)
         timing["stt_ms"] = int((time.monotonic() - t0) * 1000)
 

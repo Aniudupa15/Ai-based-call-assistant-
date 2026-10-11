@@ -67,7 +67,17 @@ def build_engines(config: Config, owner_name: str) -> Engines:
                         "Kannada instead. See docs/HOME_SETUP.md to enable it.",
                         str(e).splitlines()[0][:200])
     whisper = WhisperSTT(m.stt_english, m.device, m.stt_compute_type)
-    stt = RoutingSTT(whisper, indic_stt)
+    lid = None
+    if indic and m.lid:
+        try:
+            from .lid import SpeechLID
+
+            lid = SpeechLID(m.lid, config.storage.model_dir)
+        except Exception as e:
+            log.warning("language detector not loaded (%s); Whisper guesses the language, "
+                        "and often mistakes Kannada. pip install speechbrain",
+                        str(e).splitlines()[0][:200])
+    stt = RoutingSTT(whisper, indic_stt, lid, config.call.languages)
     indic_langs = [l for l in config.call.languages if l in ("hi", "kn")]
     kokoro_voices = {}
     if m.tts_english.startswith("kokoro:"):
