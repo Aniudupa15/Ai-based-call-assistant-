@@ -98,7 +98,13 @@ class OllamaLLM:
                 if m.get("name") == self.model or m.get("model") == self.model:
                     size, vram = m.get("size") or 0, m.get("size_vram") or 0
                     self.gpu_share = vram / size if size else None
-            if self.gpu_share is not None and self.gpu_share < 0.95:
+            if self.gpu_share == 0:
+                log.warning(
+                    "Ollama is running %s entirely on the CPU, so replies will be slow. "
+                    "Ollama sometimes starts before the GPU is ready: quit it from the "
+                    "system tray and start it again (or run `ollama serve`), then check "
+                    "`ollama ps` says 100%% GPU.", self.model)
+            elif self.gpu_share is not None and self.gpu_share < 0.95:
                 log.warning(
                     "only %d%% of %s is on the GPU; the rest runs on the CPU and replies "
                     "will be slow. Free GPU memory (close other GPU programs, or set "
