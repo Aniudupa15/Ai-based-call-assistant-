@@ -302,6 +302,7 @@ class SimResult:
     llm_generated: list[str]
     stt_calls: list[tuple[str, float]]
     record: dict | None = None
+    json_calls: list[str] = field(default_factory=list)
     wall_s: float = 0.0
 
     def bot_lines(self) -> list[str]:
@@ -467,7 +468,7 @@ async def run_scenario(sc: Scenario, keep_dir: str | None = None) -> SimResult:
     return SimResult(sc, turns, s.end_reason or "", link.messages,
                      [t["timing"] for t in turns if t.get("timing")],
                      llm.prompts, llm.generated, stt.calls, record,
-                     time.monotonic() - t0)
+                     json_calls=list(llm.json_calls), wall_s=time.monotonic() - t0)
 
 
 async def run_all(scenarios: list[Scenario]) -> list[SimResult]:

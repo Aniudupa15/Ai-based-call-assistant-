@@ -35,3 +35,20 @@ def test_clean_reply():
     assert clean_reply("Assistant: Thank you.") == "Thank you."
     assert clean_reply("😊") == ""
     assert clean_reply("ನಮಸ್ಕಾರ, ರಮೇಶ್.") == "ನಮಸ್ಕಾರ, ರಮೇಶ್."
+
+
+def test_message_taker_flow():
+    from app.message import MessageTaker, Slots, english_line, fallback_slots, parse_slots
+
+    m = MessageTaker()
+    step = m.update(Slots())
+    assert step.key == "ask_name_reason"
+    step = m.update(Slots(name="Ananya Udupa", urgent=True))
+    assert step.key == "ask_reason" and english_line(step, "Anil") == \
+        "I understand it's urgent. Could you briefly tell me what it's about?"   # 2nd ask
+    step = m.update(Slots(reason="a private matter"))      # name is remembered
+    assert step.end and "Thank you, Ananya." in english_line(step, "Anil")
+    # The owner's name is never taken as the caller's.
+    assert parse_slots('{"name": "Anirudha", "reason": null}', "Anirudha Udupa").name is None
+    assert parse_slots('{"name": "Ananya", "urgent": "true"}', "Anirudha").urgent
+    assert fallback_slots(["Hi, this is Ramesh about the parcel today"]).name == "Ramesh"

@@ -21,6 +21,10 @@ def calls():
     return {r.scenario.name: r for r in results}
 
 
+def message_checks(r):
+    return sum(1 for p in r.json_calls if p.startswith("You read a phone call"))
+
+
 def replies(r):
     """Bot lines after the greeting, without the automatic ones."""
     return [l for l in r.bot_lines()[1:] if l not in (ONE_MOMENT, STILL_THERE)]
@@ -34,8 +38,8 @@ def ends_with_goodbye(r):
 def test_happy_path(calls):
     r = calls["happy_path"]
     assert r.caller_lines() == ["Hi, this is Ramesh.", "I am calling about the parcel delivery today."]
-    assert replies(r) == ["Thank you. What is the call about?",
-                          "Thank you, I will pass your message on. Goodbye."]
+    assert replies(r) == ["Thank you, Ramesh. What is the call regarding?",
+                          "Thank you, Ramesh. I'll make sure Anil gets your message. Goodbye."]
     ends_with_goodbye(r)
     assert r.record["caller_name"] == "Ramesh"
     # Fast models: no filler, and the reply starts within about 2 s of turn end.
@@ -73,9 +77,8 @@ def test_mid_sentence_pause_is_one_answer(calls):
     between = [t for t in r.turns if t["speaker"] == "bot"
                and caller[0]["start_ms"] < t["start_ms"] < caller[1]["end_ms"]]
     assert between == [], r.render()
-    assert len(replies(r)) == 1
-    # The model saw it as one message.
-    assert "calling about the water bill." in r.llm_prompts[0][-1]["content"]
+    assert replies(r) == ["Thank you, Ramesh. I'll make sure Anil gets your message. Goodbye."]
+    assert message_checks(r) == 1      # judged once, with both halves
 
 
 @pytest.mark.parametrize("name", ["cough_while_thinking", "noise_only", "noisy_line"])
@@ -90,9 +93,10 @@ def test_noise_is_not_a_turn(calls, name):
 def test_bot_never_answers_its_own_echo(calls, name):
     r = calls[name]
     assert r.caller_lines() == ["Hi, this is Ramesh.", "It is about the meeting tomorrow."], r.render()
-    assert len(r.llm_generated) == 2
+    assert message_checks(r) == 2       # the echo never reached the model
     ends_with_goodbye(r)
     assert r.count(STILL_THERE) == 0
+    assert r.wall_s < 45, r.render()     # no endless stop-start on an echoey line
 
 
 def test_barge_in_keeps_only_what_was_heard(calls):
@@ -195,3 +199,27 @@ def test_contact_language_hint(calls):
     r = calls["family_contact"]
     assert [t["language"] for t in r.turns if t.get("timing")] == ["hi"]
     assert r.count(ASK_LANGUAGE) == 0
+
+
+def test_desk_test_call_is_handled_professionally(calls):
+    r = calls["desk_test_call"]
+    assert replies(r) == [
+        "May I have your name and the reason for your call, please?",
+        "I understand it's urgent. Could you briefly tell me what it's about?",
+        "Thank you, Ananya. I understand it's urgent, and I'll make sure Anil gets "
+        "your message right away. Goodbye."], r.render()
+
+
+def test_caller_who_declines_is_asked_twice_then_let_go(calls):
+    r = calls["caller_declines"]
+    assert replies(r) == [
+        "May I have your name and the reason for your call, please?",
+        "Could you tell me who is calling, so I can pass your message to Anil?",
+        "Thank you. I'll make sure Anil gets your message. Goodbye."], r.render()
+
+
+def test_question_is_answered_politely(calls):
+    r = calls["caller_asks_question"]
+    assert replies(r)[0].startswith("I'm sorry, I don't have that information")
+    assert replies(r)[0].endswith("Thank you, Ramesh. What is the call regarding?")
+    ends_with_goodbye(r)
