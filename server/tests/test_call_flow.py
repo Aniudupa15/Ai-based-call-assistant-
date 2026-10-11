@@ -20,7 +20,8 @@ APP = {"Authorization": "Bearer app-secret"}
 def make_client(config, stt_script=None, replies=None):
     tts = FakeTTS()
     engines = Engines(stt=FakeSTT(stt_script), llm=FakeLLM(replies), tts=tts,
-                      phrases=PhraseCache(tts, config.storage.phrase_dir, config.owner.name),
+                      phrases=PhraseCache(tts, config.storage.phrase_dir, config.owner.name,
+                                          languages=config.call.phrase_languages),
                       vad_factory=EnergyVad, loaded=["fake"])
     return TestClient(create_app(config, engines))
 
@@ -75,6 +76,7 @@ def test_full_bot_call(config):
 
 
 def test_language_hint_and_translation(config):
+    config.call.phrase_languages = ["en", "hi", "kn"]
     with make_client(config, [("ನಮಸ್ಕಾರ, ನಾನು ಅಮ್ಮ.", "kn"), ("ಬೇಗ ಕರೆ ಮಾಡು.", "kn")]) as client:
         r = client.post("/api/contacts", headers=APP,
                         json={"name": "Amma", "number": "+919811111111", "group": "family",
