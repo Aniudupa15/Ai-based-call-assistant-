@@ -1,0 +1,73 @@
+# Copy to config.yaml and fill in. config.yaml is git-ignored.
+owner:
+  name: "Your name"
+  number: "+91xxxxxxxxxx"        # main Airtel number, for SMS summaries
+  say_as: ""                     # how the voice should say your name, e.g. "Uh-nee-rood-ha"
+
+network:
+  listen: "0.0.0.0"
+  port: 8765
+  esp_token: "change-me"
+  app_token: "change-me-too"
+
+call:
+  max_seconds: 180
+  speech_start_ms: 200
+  end_of_turn_ms: 600
+  barge_in_ms: 300
+  silence_prompt_s: 6
+  filler_after_ms: 3500          # "one moment please" if the reply has not started by then
+  max_reply_sentences: 3
+  languages: [en, hi, kn]
+  default_language: en
+  phrase_languages: [en]         # fixed lines (greeting, goodbye, voicemail) in English only;
+                                 # add hi, kn to speak them in all three. Replies still follow the caller.
+  use_caller_name: true          # false: every line is fixed, so tools/make_voice.py can record
+                                 # them all in a free natural Indian voice (Indic Parler-TTS)
+  reply_mode: scripted           # scripted: fixed professional lines, the model only reads the
+                                 # call (reliable with small models); llm: the model writes replies
+  scripted_languages: [hi, kn]   # Hindi/Kannada callers hear prepared replies in their language
+                                 # (a 3b model writes them badly); [] lets the model reply freely.
+
+models:
+  backend: local                 # local | fake (fake needs no GPU; for development and tests)
+  # Sized for a 4 GB GPU (e.g. GTX 1650). tools/doctor.py suggests sizes for yours.
+  stt_english: "small"           # faster-whisper model name
+  stt_indic: "ai4bharat/indic-conformer-600m-multilingual"
+  llm: "qwen2.5:3b-instruct"     # Ollama model name; 7b needs about 6 GB of GPU memory
+  ollama_url: "http://127.0.0.1:11434"
+  tts_english: "kokoro:hf_alpha"  # Indian-accented English (Kokoro's Hindi speakers: hf_alpha,
+                                 # hf_beta, hm_omega, hm_psi); kokoro:af_heart is American, or a
+                                 # Piper file. Compare them all with tools/voice_test.py
+  tts_hindi: "kokoro:hf_alpha"   # Kokoro Hindi voice; "" uses tts_indic (MMS) for Hindi too
+  tts_device: "cpu"
+  tts_indic: "mms"               # mms (fast, CPU) or ai4bharat/indic-parler-tts (GPU)
+  device: "cuda"                 # Whisper on the GPU
+  stt_compute_type: "auto"       # int8_float16 on the GPU, int8 on the CPU
+  stt_indic_device: "cpu"        # IndicConformer for Hindi/Kannada
+  lid: "speechbrain/lang-id-voxlingua107-ecapa"   # tells Kannada/Hindi/English apart (CPU)
+  tts_indic_device: "cpu"
+  vad: silero                    # silero | energy
+
+# Sarvam AI voices: natural Indian English, Hindi and Kannada (needs internet and a key
+# from dashboard.sarvam.ai). Only the bot's words are sent, never the caller's audio.
+# If Sarvam is unreachable mid-call, the local voices above speak instead.
+sarvam:
+  api_key: ""                    # or set the SARVAM_API_KEY environment variable
+  model: "bulbul:v3"
+  speaker: "priya"               # women: priya, ritu ...; men: shubh, aditya ...
+  pace: 1.0
+  languages: [en, hi, kn]
+
+storage:
+  database: "data/calls.db"
+  audio_dir: "data/audio"
+  phrase_dir: "data/phrases"
+  voice_dir: "data/voice_lines"  # lines recorded by tools/make_voice.py (played when present)
+  model_dir: "data/models"
+  retention_days: 30
+
+notify:
+  sms_urgent: true
+  sms_high_after_minutes: 10
+  sms_normal_after_minutes: 60

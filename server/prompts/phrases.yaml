@@ -1,0 +1,80 @@
+# Fixed phrases, synthesised once per language by tools/make_greetings.py.
+# {owner_name} is filled from settings. Keep each one short: Indic Parler-TTS is slow.
+# Hindi and Kannada lines should be checked by a native speaker before daily use.
+
+# Full greeting, used when a contact has a fixed language.
+greeting:
+  en: "Hello, this is an automated assistant answering for {owner_name}, and this call is recorded. {owner_name} can't take your call right now. May I know who is calling and what it is about?"
+  hi: "नमस्ते, मैं {owner_name} का स्वचालित सहायक हूँ, और यह कॉल रिकॉर्ड हो रही है। {owner_name} अभी फ़ोन नहीं उठा सकते। क्या मैं जान सकता हूँ कि आप कौन हैं और किस बारे में कॉल किया है?"
+  kn: "ನಮಸ್ಕಾರ, ನಾನು {owner_name} ಅವರ ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ, ಈ ಕರೆ ರೆಕಾರ್ಡ್ ಆಗುತ್ತಿದೆ. {owner_name} ಈಗ ಕರೆ ಸ್ವೀಕರಿಸಲು ಸಾಧ್ಯವಿಲ್ಲ. ನೀವು ಯಾರು ಮತ್ತು ಯಾವ ವಿಷಯಕ್ಕೆ ಕರೆ ಮಾಡಿದ್ದೀರಿ ಎಂದು ತಿಳಿಸುತ್ತೀರಾ?"
+
+# Short greeting, one sentence per language, for callers with no fixed language.
+greeting_short:
+  en: "Hello, this is {owner_name}'s automated assistant and this call is recorded; please tell me who is calling and why."
+  kn: "ನಮಸ್ಕಾರ, ಇದು {owner_name} ಅವರ ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ, ಈ ಕರೆ ರೆಕಾರ್ಡ್ ಆಗುತ್ತಿದೆ; ದಯವಿಟ್ಟು ನೀವು ಯಾರು, ಯಾಕೆ ಕರೆ ಮಾಡಿದ್ದೀರಿ ಎಂದು ತಿಳಿಸಿ."
+  hi: "नमस्ते, यह {owner_name} का स्वचालित सहायक है और यह कॉल रिकॉर्ड हो रही है; कृपया बताइए कि आप कौन हैं और क्यों कॉल किया है।"
+
+one_moment:
+  en: "One moment please."
+  hi: "एक पल रुकिए।"
+  kn: "ಒಂದು ಕ್ಷಣ ದಯವಿಟ್ಟು."
+
+repeat:
+  en: "Sorry, could you say that again?"
+  hi: "माफ़ कीजिए, क्या आप फिर से बोल सकते हैं?"
+  kn: "ಕ್ಷಮಿಸಿ, ದಯವಿಟ್ಟು ಮತ್ತೊಮ್ಮೆ ಹೇಳುತ್ತೀರಾ?"
+
+still_there:
+  en: "Are you still there?"
+  hi: "क्या आप अभी भी लाइन पर हैं?"
+  kn: "ನೀವು ಇನ್ನೂ ಲೈನ್‌ನಲ್ಲಿ ಇದ್ದೀರಾ?"
+
+goodbye:
+  en: "Thank you, I will pass your message on. Goodbye."
+  hi: "धन्यवाद, मैं आपका संदेश पहुँचा दूँगा। नमस्ते।"
+  kn: "ಧನ್ಯವಾದಗಳು, ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ತಲುಪಿಸುತ್ತೇನೆ. ನಮಸ್ಕಾರ."
+
+wrap_up:
+  en: "I'm sorry, we are out of time. I will pass your message on. Goodbye."
+  hi: "माफ़ कीजिए, समय समाप्त हो गया है। मैं आपका संदेश पहुँचा दूँगा। नमस्ते।"
+  kn: "ಕ್ಷಮಿಸಿ, ಸಮಯ ಮುಗಿದಿದೆ. ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ತಲುಪಿಸುತ್ತೇನೆ. ನಮಸ್ಕಾರ."
+
+send_text:
+  en: "Sorry, I could not understand. Please send a text message instead. Goodbye."
+  hi: "माफ़ कीजिए, मैं समझ नहीं पाया। कृपया एक टेक्स्ट मैसेज भेज दीजिए। नमस्ते।"
+  kn: "ಕ್ಷಮಿಸಿ, ನನಗೆ ಅರ್ಥವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಒಂದು ಸಂದೇಶ ಕಳುಹಿಸಿ. ನಮಸ್ಕಾರ."
+
+ask_language:
+  en: "Kannada, Hindi or English?"
+  kn: "ಕನ್ನಡ, ಹಿಂದಿ ಅಥವಾ ಇಂಗ್ಲಿಷ್?"
+  hi: "कन्नड़, हिंदी या इंग्लिश?"
+
+# Replies for callers speaking a language in call.scripted_languages (Hindi and
+# Kannada by default): a small model writes those languages badly, so the bot says
+# these instead. Always in the caller's language, whatever phrase_languages says.
+ask_name_reason:
+  en: "May I know your name and why you are calling?"
+  hi: "क्या मैं आपका नाम और कॉल करने की वजह जान सकता हूँ?"
+  kn: "ನಿಮ್ಮ ಹೆಸರು ಮತ್ತು ಕರೆ ಮಾಡಿದ ಕಾರಣ ತಿಳಿಸುತ್ತೀರಾ?"
+
+ask_name:
+  en: "Thank you. May I know your name?"
+  hi: "धन्यवाद। क्या मैं आपका नाम जान सकता हूँ?"
+  kn: "ಧನ್ಯವಾದಗಳು. ನಿಮ್ಮ ಹೆಸರು ತಿಳಿಸುತ್ತೀರಾ?"
+
+ask_reason:
+  en: "Thank you. What is the call about?"
+  hi: "धन्यवाद। आप किस बारे में कॉल कर रहे हैं?"
+  kn: "ಧನ್ಯವಾದಗಳು. ಯಾವ ವಿಷಯಕ್ಕೆ ಕರೆ ಮಾಡಿದ್ದೀರಿ?"
+
+# Copied to the microSD card for voicemail mode, played as en + kn + hi.
+voicemail_greeting:
+  en: "This is an automated assistant. Please leave your name and message after the beep."
+  kn: "ಇದು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ. ಬೀಪ್ ನಂತರ ನಿಮ್ಮ ಹೆಸರು ಮತ್ತು ಸಂದೇಶವನ್ನು ತಿಳಿಸಿ."
+  hi: "यह एक स्वचालित सहायक है। बीप के बाद अपना नाम और संदेश छोड़िए।"
+
+# Played by the ESP32 if the PC link drops during a bot call.
+apology:
+  en: "Sorry, the line has a problem. Please call again later."
+  kn: "ಕ್ಷಮಿಸಿ, ಲೈನ್‌ನಲ್ಲಿ ತೊಂದರೆ ಇದೆ. ದಯವಿಟ್ಟು ನಂತರ ಮತ್ತೆ ಕರೆ ಮಾಡಿ."
+  hi: "माफ़ कीजिए, लाइन में समस्या है। कृपया बाद में फिर कॉल करें।"

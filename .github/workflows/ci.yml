@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  firmware-logic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C firmware/test/host
+
+  firmware-build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.3.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build firmware with the example config
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          cp firmware/main/config.example.h firmware/main/config.h
+          cd firmware && idf.py set-target esp32 && idf.py build
+      - name: Build on-device unit tests
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          cd firmware/test && idf.py set-target esp32 && idf.py build
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Upload the debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: call-assistant-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
