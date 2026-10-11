@@ -37,6 +37,9 @@ class CallConfig(BaseModel):
     # name, the reason, then goodbye); the language model only judges what is still
     # missing. Small models write Hindi and Kannada poorly. [] lets the model reply.
     scripted_languages: list[str] = Field(default_factory=lambda: ["hi", "kn"])
+    # scripted: the model only reads the call; the bot says fixed, professional lines
+    # (app/message.py). llm: the model writes every reply (needs a strong model).
+    reply_mode: Literal["scripted", "llm"] = "scripted"
 
 
 class ModelsConfig(BaseModel):

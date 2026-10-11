@@ -68,6 +68,24 @@ class OllamaLLM:
         resp.raise_for_status()
         return resp.json().get("message", {}).get("content", "")
 
+    def load_now(self) -> None:
+        """Loads the model before the speech models take GPU memory, so it gets the
+        GPU first. Blocking; called once at start-up."""
+        try:
+            httpx.post(f"{self.url}/api/generate", timeout=180.0,
+                       json={"model": self.model, "keep_alive": -1, "prompt": "Hello",
+                             "options": {"num_predict": 1, "num_ctx": self.num_ctx}})
+        except Exception as e:
+            log.warning("could not load %s in Ollama yet: %s", self.model, e)
+
+    async def prime(self, prompt: str) -> None:
+        """Runs a prompt once so Ollama keeps its start cached; the first caller turn
+        then only reads the new words, not the whole instructions."""
+        body = {"model": self.model, "messages": [{"role": "user", "content": prompt}],
+                "stream": False, "format": "json", "keep_alive": -1,
+                "options": {"temperature": 0.1, "num_ctx": self.num_ctx, "num_predict": 1}}
+        await self._client.post(f"{self.url}/api/chat", json=body)
+
     async def warm(self) -> None:
         """Loads the model into GPU memory so the first call is not slow, and warns if
         it does not fit: layers left on the CPU make every reply many times slower."""

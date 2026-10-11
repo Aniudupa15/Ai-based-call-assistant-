@@ -45,11 +45,13 @@ class WhisperSTT:
             compute_type = "int8_float16" if device == "cuda" else "int8"
         self.model = WhisperModel(model_name, device=device, compute_type=compute_type)
         self._last: tuple | None = None   # (audio, language, Transcript) from detect_language
+        self.prompt: str | None = None    # words to expect, e.g. the owner's name
 
     def _run(self, audio16k: np.ndarray, language: str | None):
         segments, info = self.model.transcribe(
             audio16k, language=language, beam_size=1, vad_filter=False,
-            condition_on_previous_text=False, without_timestamps=True)
+            condition_on_previous_text=False, without_timestamps=True,
+            initial_prompt=self.prompt)
         segs = list(segments)
         text = " ".join(s.text.strip() for s in segs).strip()
         conf = float(math.exp(sum(s.avg_logprob for s in segs) / len(segs))) if segs else None

@@ -37,6 +37,7 @@ class CallService:
         self.audio_dir = Path(config.storage.audio_dir)
         self.audio_dir.mkdir(parents=True, exist_ok=True)
         self._tasks: set[asyncio.Task] = set()
+        self._heard: dict[str, str | None] = {}   # caller name the live call established
 
     def _spawn(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -84,6 +85,9 @@ class CallService:
             path, digest = await asyncio.to_thread(self._save_recording, call_id,
                                                    session.recorder)
             self.db.update_call(call_id, audio_path=str(path), audio_sha256=digest)
+        taker = getattr(session, "slots", None)
+        if taker is not None:
+            self._heard[call_id] = taker.name
         self._spawn(self.process(call_id, session.rule))
 
     def _save_recording(self, call_id: str, recorder: Recorder) -> tuple[Path, str]:
@@ -109,6 +113,9 @@ class CallService:
                        f"group: {rule.group}")
             result = await summarise(self.engines.llm, turns, self.settings.owner_name, context)
             result = apply_rule_floor(result, rule.severity_floor)
+            name = self._heard.pop(call_id, None)
+            if not result.caller_name and name and "summary_failed" not in result.flags:
+                result.caller_name = name         # the call itself established it
 
             flags = list(dict.fromkeys(result.flags))
             confs = [t["confidence"] for t in turns

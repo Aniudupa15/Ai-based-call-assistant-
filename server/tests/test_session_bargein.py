@@ -31,6 +31,7 @@ def short_phrases():
 
 def test_barge_in_clears_audio(config, tmp_path):
     config.realtime = True
+    config.call.reply_mode = "llm"
     tts = FakeTTS()
     engines = Engines(stt=FakeSTT(), llm=FakeLLM([LONG]), tts=tts,
                       phrases=PhraseCache(tts, tmp_path / "ph", "Ani", short_phrases()),
@@ -79,6 +80,7 @@ def test_barge_in_clears_audio(config, tmp_path):
 
 def test_slow_model_reply_is_not_cut_off(config, tmp_path):
     """The 'one moment' filler must not cancel a reply that is still being written."""
+    config.call.reply_mode = "llm"
     config.call.filler_after_ms = 10    # before the first chunk (30 ms) arrives
     tts = FakeTTS()
     reply = "Thank you for calling, I will make sure the message reaches Ani today. Goodbye. [END]"

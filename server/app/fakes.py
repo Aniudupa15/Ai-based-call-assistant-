@@ -64,13 +64,20 @@ class FakeLLM:
     async def complete_json(self, messages: list[dict]) -> str:
         prompt = messages[-1]["content"]
         self.json_calls.append(prompt)
-        if prompt.startswith("A caller is leaving a phone message"):
-            caller = prompt.split("so far", 1)[-1].split("Return only JSON", 1)[0]
-            name = re.search(r"(?:this is|i am|my name is|मैं|ನಾನು) (\S+)", caller, re.I)
-            reason = re.search(r"about|because|parcel|पार्सल|बारे|ಬಗ್ಗೆ|ಪಾರ್ಸೆಲ್|घर", caller, re.I)
-            return json.dumps({"name": name.group(1) if name else None,
-                               "reason": "stated" if reason else None,
-                               "finished": bool(re.search(r"that is all|bye", caller, re.I))})
+        if prompt.startswith("You read a phone call"):
+            # The message check: plain pattern matching over the caller's lines.
+            from .message import fallback_slots
+
+            transcript = prompt.split("Call so far:", 1)[-1]
+            caller = [l[8:] for l in transcript.splitlines() if l.startswith("Caller: ")]
+            low = " ".join(caller).lower()
+            s = fallback_slots(caller)
+            name = s.name or (re.search(r"(?:ನಾನು|मैं) (\S+)", " ".join(caller)) or [None, None])[1]
+            reason = re.search(r"about|because|regarding|parcel|meeting|bill|delivery|private|"
+                               r"पार्सल|बारे|ಬಗ್ಗೆ|घर", low)
+            return json.dumps({"name": name, "reason": reason.group(0) if reason else None,
+                               "urgent": s.urgent, "question": s.question,
+                               "finished": s.finished})
         if prompt.startswith("Translate"):
             lines = re.findall(r"^(\d+): (.*)$", prompt, re.M)
             return json.dumps({"lines": [{"seq": int(s), "en": f"(English) {t}"}

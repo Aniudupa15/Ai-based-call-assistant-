@@ -27,7 +27,7 @@ SCENARIOS: list[Scenario] = [
         WaitBot(),
         Say("It is about the electricity bill."),
         WaitBot(),
-    ], llm={"first_token_s": 1.8, "tokens_per_s": 12}),
+    ], llm={"first_token_s": 1.8, "tokens_per_s": 12}, call={"reply_mode": "llm"}),
     Scenario("slow_stt", "transcription takes 3 s: no 'are you still there' meanwhile", [
         WaitBot(),
         Say("Hi, this is Ramesh, calling about the parcel."),
@@ -82,7 +82,7 @@ SCENARIOS: list[Scenario] = [
         WaitBot(),
     ], llm={"replies": ["Hello there. I am the automated assistant for Anil, who is busy "
                         "at the moment. Could you please tell me your name and the reason "
-                        "for your call so that I can pass it on?"]}),
+                        "for your call so that I can pass it on?"]}, call={"reply_mode": "llm"}),
     Scenario("false_barge_in", "a cough over the reply: the bot carries on", [
         WaitBot(),
         Say("Hi, this is Ramesh."),
@@ -92,7 +92,7 @@ SCENARIOS: list[Scenario] = [
         Say("It is about the parcel."),
         WaitBot(),
     ], llm={"replies": ["Thank you, Ramesh. Anil is not available right now. What is the "
-                        "call about?"]}),
+                        "call about?"]}, call={"reply_mode": "llm"}),
     Scenario("talks_over_greeting", "caller says hello during the greeting", [
         Pause(1200),
         Say("Hello? Hello?"),
@@ -137,6 +137,31 @@ SCENARIOS: list[Scenario] = [
         Say("ಪಾರ್ಸೆಲ್ ಬಗ್ಗೆ.", "kn", detected={"kn": 0.8}),
         WaitBot(),
     ]),
+    Scenario("desk_test_call", "the owner's own desk test: urgent, name late, private reason", [
+        WaitBot(),
+        Say("Yeah, I want to speak to Anil."),
+        WaitBot(),
+        Say("It is very urgent. I am Ananya, his elder sister."),
+        WaitBot(),
+        Say("It is something private."),
+        WaitBot(),
+    ]),
+    Scenario("caller_declines", "will not give a name or reason: asked twice, then goodbye", [
+        WaitBot(),
+        Say("Just tell him to call me back."),
+        WaitBot(),
+        Say("No, I won't say."),
+        WaitBot(),
+        Say("No."),
+        WaitBot(),
+    ]),
+    Scenario("caller_asks_question", "asks when the owner is back", [
+        WaitBot(),
+        Say("This is Ramesh. When will he be back?"),
+        WaitBot(),
+        Say("It is about the parcel."),
+        WaitBot(),
+    ]),
     Scenario("hindi_caller", "Hindi detected confidently: replies in Hindi", [
         WaitBot(),
         Say("नमस्ते, मैं रमेश बोल रहा हूँ, पार्सल के बारे में।", "hi",
@@ -157,14 +182,14 @@ SCENARIOS: list[Scenario] = [
         WaitBot(),
     ], llm={"replies": ["**Hello Ramesh!** Thanks for calling. Anil is busy. I can take a "
                         "message. What is it about? 😊",
-                        "Got it. I will tell Anil about the parcel. Goodbye! [END]"]}),
+                        "Got it. I will tell Anil about the parcel. Goodbye! [END]"]}, call={"reply_mode": "llm"}),
     Scenario("model_never_ends", "model never says [END]: the call still finishes", [
         WaitBot(),
         Say("Hi, this is Ramesh, about the parcel."),
         WaitBot(),
         Say("No, that is all."),
         WaitBot(),
-    ], llm={"policy": lambda m: "Okay. Is there anything else?"}, max_s=45),
+    ], llm={"policy": lambda m: "Okay. Is there anything else?"}, max_s=45, call={"reply_mode": "llm"}),
     Scenario("noisy_line", "constant background hiss", [
         WaitBot(),
         Say("Hi, this is Ramesh, calling about the parcel."),

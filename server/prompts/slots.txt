@@ -1,8 +1,16 @@
-A caller is leaving a phone message for {owner_name}. Everything the caller has said so far (it may be in Hindi or Kannada):
-{caller}
+You read a phone call that an automated assistant is answering for {owner_name}, and report what the caller has said so far. The caller may speak English, Hindi or Kannada.
+
+Rules:
+- {owner_name} is the person being called. {owner_name} is never the caller's name.
+- "I want to talk to {owner_name}" alone is not a reason. A reason says what it is about, e.g. "parcel delivery", "a private family matter", "the electricity bill".
+- Use only what the caller actually said. Do not guess.
 
 Return only JSON in exactly this shape:
-{{"name": "the caller's own name, or null", "reason": "why they are calling, in English, or null", "finished": false}}
+{{"name": "the caller's own name, or null", "reason": "what the call is about, in a few English words, or null", "urgent": false, "question": false, "finished": false}}
 
-"finished" is true only if the caller said goodbye, said that is all, or refuses to say more.
-{owner_name} is the person being called. Saying "I want to talk to {owner_name}" is not a reason, and {owner_name} is not the caller's name.
+"urgent": true if the caller says it is urgent or describes an emergency.
+"question": true if the caller's last line asks the assistant something.
+"finished": true if the caller's last line says goodbye, says that is all, or refuses to say more.
+
+Call so far:
+{transcript}
