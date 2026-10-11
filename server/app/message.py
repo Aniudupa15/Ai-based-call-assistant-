@@ -155,3 +155,18 @@ def english_line(step: Step, owner_name: str) -> str:
     if step.question:
         return f"{thanks} I'll pass your message to {owner_name}. Goodbye."
     return f"{thanks} I'll make sure {owner_name} gets your message. Goodbye."
+
+
+def all_english_lines(owner_name: str) -> list[str]:
+    """Every English line the bot can say when lines do not use the caller's name,
+    so they can all be recorded ahead of time (tools/make_voice.py)."""
+    lines = []
+    for key in ("ask_name_reason", "ask_reason", "ask_name", "goodbye"):
+        for again in (False, True):
+            for urgent in (False, True):
+                for question in (False, True):
+                    line = english_line(Step(key, key == "goodbye", None, urgent, question,
+                                             again), owner_name)
+                    if line not in lines:
+                        lines.append(line)
+    return lines

@@ -681,6 +681,8 @@ class Session:
         # Hindi and Kannada: the prepared line; English (or a language without one):
         # a line with the caller's name, synthesised now.
         if self.language == "en" or self.language not in self.engines.phrases.phrases[step.key]:
+            if not self.config.call.use_caller_name:
+                step.name = None     # fixed wording, so a recorded voice can say it
             text = english_line(step, self.owner_name)
             audio = await asyncio.to_thread(self.engines.tts.synthesize, text, "en")
             lang = "en"

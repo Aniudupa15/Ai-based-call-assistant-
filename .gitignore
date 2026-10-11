@@ -13,6 +13,7 @@ sdcard/
 __pycache__/
 *.pyc
 .venv/
+.venv-voice/
 venv/
 .pytest_cache/
 *.egg-info/

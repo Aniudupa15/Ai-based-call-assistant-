@@ -47,7 +47,8 @@ def build_engines(config: Config, owner_name: str) -> Engines:
 
     from .llm import OllamaLLM
     from .stt import IndicConformerSTT, RoutingSTT, WhisperSTT
-    from .tts import FallbackTTS, IndicParlerTTS, KokoroTTS, MmsTTS, PiperTTS, RoutingTTS
+    from .tts import (FallbackTTS, IndicParlerTTS, KokoroTTS, MmsTTS, PiperTTS,
+                      PrerecordedTTS, RoutingTTS)
 
     indic = any(l in config.call.languages for l in ("hi", "kn"))
     llm = OllamaLLM(m.ollama_url, m.llm)
@@ -86,6 +87,11 @@ def build_engines(config: Config, owner_name: str) -> Engines:
         indic_tts = IndicParlerTTS(m.tts_indic, m.tts_indic_device)
     say_as = {owner_name: config.owner.say_as} if config.owner.say_as else {}
     tts = RoutingTTS(english, indic_tts, per_language, say_as)
+    if recorded_lines(config):
+        # Lines recorded by tools/make_voice.py play first; others use the live voice.
+        tts = PrerecordedTTS(config.storage.voice_dir, tts)
+        log.info("using %d recorded voice lines from %s", recorded_lines(config),
+                 config.storage.voice_dir)
     sarvam = sarvam_tts(config)
     if sarvam is not None:
         # Sarvam speaks the languages it is set for; the local voices stay as backup.
@@ -118,6 +124,13 @@ def sarvam_tts(config: Config):
     return SarvamTTS(key, sv.model, sv.speaker, sv.pace)
 
 
+def recorded_lines(config: Config) -> int:
+    from pathlib import Path
+
+    folder = Path(config.storage.voice_dir)
+    return sum(1 for _ in folder.glob("*/*.wav")) if folder.exists() else 0
+
+
 def voice_tag(config: Config) -> str:
     """Names the phrase-cache folder after the voices, so a new voice means new audio."""
     import hashlib
@@ -128,7 +141,9 @@ def voice_tag(config: Config) -> str:
     sv = config.sarvam
     sarvam = (f"sarvam:{sv.model}:{sv.speaker}:{sv.pace}:{','.join(sv.languages)}"
               if sv.api_key or os.environ.get("SARVAM_API_KEY") else "")
-    key = "|".join([m.tts_english, m.tts_hindi, m.tts_indic, config.owner.say_as, sarvam])
+    recorded = f"recorded:{recorded_lines(config)}"
+    key = "|".join([m.tts_english, m.tts_hindi, m.tts_indic, config.owner.say_as, sarvam,
+                    recorded])
     return hashlib.sha1(key.encode()).hexdigest()[:8]
 
 
