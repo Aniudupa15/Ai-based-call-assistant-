@@ -54,7 +54,7 @@ class IndicParlerTTS:
     tools/make_voice.py uses it to record the bot's lines ahead of time."""
 
     # Speakers the model card recommends for each language.
-    SPEAKERS = {"en": "Thoma", "hi": "Divya", "kn": "Anu"}
+    SPEAKERS = {"en": "Thoma", "hi": "Aman", "kn": "Suresh"}
     STYLE = ("{speaker} speaks at a moderate pace with a clear, warm and professional tone. "
              "The recording is very high quality, close-sounding, with no background noise.")
 

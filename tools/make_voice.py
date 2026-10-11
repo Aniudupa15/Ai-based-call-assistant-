@@ -15,7 +15,7 @@ from the server). One-time setup, from the server folder:
 1. Pick speakers (plays a sample of each):
     .venv-voice\\Scripts\\python.exe ..\\tools\\make_voice.py --config config.yaml --try-speakers
 2. Record all lines (stop Ollama first if using the GPU, or add --device cpu):
-    .venv-voice\\Scripts\\python.exe ..\\tools\\make_voice.py --config config.yaml --en Thoma --hi Divya --kn Anu
+    .venv-voice\\Scripts\\python.exe ..\\tools\\make_voice.py --config config.yaml --en Thoma --hi Aman --kn Suresh
 3. In config.yaml set call.use_caller_name: false, then start the server as usual.
 
 Lines go to data/voice_lines/. Re-run with --force after changing speakers.
@@ -97,8 +97,8 @@ def main() -> int:
     p.add_argument("--config", default="config.yaml")
     p.add_argument("--device", default="cuda", help="cuda (stop Ollama first) or cpu (slow)")
     p.add_argument("--en", default="Thoma", help="English speaker")
-    p.add_argument("--hi", default="Divya", help="Hindi speaker")
-    p.add_argument("--kn", default="Anu", help="Kannada speaker")
+    p.add_argument("--hi", default="Aman", help="Hindi speaker")
+    p.add_argument("--kn", default="Suresh", help="Kannada speaker")
     p.add_argument("--try-speakers", action="store_true", help="play samples to choose from")
     p.add_argument("--force", action="store_true", help="record again lines that exist")
     p.add_argument("--list", action="store_true", help="only list the lines")
@@ -128,7 +128,7 @@ def main() -> int:
                 write_wav(path, audio)
                 print(f"[{lang}] {speaker:8s} -> {path}")
                 play(audio)
-        print("\nRecord with your choices, e.g.:  --en Thoma --hi Divya --kn Anu")
+        print("\nRecord with your choices, e.g.:  --en Thoma --hi Aman --kn Suresh")
         return 0
 
     done = 0
