@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import queue
 import sys
 import time
@@ -25,7 +26,7 @@ import numpy as np
 SERVER = Path(__file__).resolve().parent.parent / "server"
 sys.path.insert(0, str(SERVER))
 
-from app.audio import resample  # noqa: E402
+from app.audio import rms_dbfs, write_wav  # noqa: E402
 from app.config import load_config  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.protocol import FRAME_BYTES  # noqa: E402
@@ -35,15 +36,35 @@ DEVICE_RATE = 16000          # most sound cards accept 16 kHz; audio is converte
 BLOCK = DEVICE_RATE // 50    # 20 ms
 
 
+def down_to_8k(block16: np.ndarray) -> np.ndarray:
+    """16 kHz -> 8 kHz for one 20 ms block. Averaging sample pairs is a simple low-pass
+    with no state, so blocks join without clicks (resampling each tiny block on its own
+    adds an edge artefact every 20 ms, which ruins speech recognition)."""
+    x = block16.astype(np.int32)[: len(block16) // 2 * 2]
+    return (x.reshape(-1, 2).mean(axis=1)).astype("<i2")
+
+
+def up_to_16k(frame8: np.ndarray, last: list) -> np.ndarray:
+    """8 kHz -> 16 kHz with linear interpolation, carrying the previous sample over."""
+    x = frame8.astype(np.float32)
+    prev = np.concatenate([[last[0]], x[:-1]])
+    out = np.empty(len(x) * 2, dtype=np.float32)
+    out[0::2] = (prev + x) / 2
+    out[1::2] = x
+    last[0] = x[-1] if len(x) else last[0]
+    return out.astype("<i2")
+
+
 class SpeakerLink:
     """Plays what the bot would send to the ESP32."""
 
     def __init__(self):
         self.out: queue.Queue[np.ndarray] = queue.Queue(maxsize=200)
         self.hangup = asyncio.Event()
+        self._last = [0.0]
 
     async def send_audio(self, frame: bytes) -> None:
-        pcm = resample(np.frombuffer(frame, dtype="<i2"), 8000, DEVICE_RATE)
+        pcm = up_to_16k(np.frombuffer(frame, dtype="<i2"), self._last)
         try:
             self.out.put_nowait(pcm)
         except queue.Full:
@@ -75,10 +96,14 @@ async def run(args) -> int:
     session = Session(call_id, number, rule, link, s.engines, config,
                       s.settings.owner_name, s.calls.session_finished)
     loop = asyncio.get_running_loop()
+    heard: list[np.ndarray] = []      # exactly what the bot received, saved for checking
+    levels: list[float] = []
 
     def mic(indata, frames, t, status):
-        pcm8 = resample(indata[:, 0].copy(), DEVICE_RATE, 8000)
-        data = pcm8.astype("<i2").tobytes()[:FRAME_BYTES].ljust(FRAME_BYTES, b"\x00")
+        pcm8 = down_to_8k(indata[:, 0])
+        heard.append(pcm8)
+        levels.append(rms_dbfs(pcm8))
+        data = pcm8.tobytes()[:FRAME_BYTES].ljust(FRAME_BYTES, b"\x00")
         loop.call_soon_threadsafe(session.feed_caller, data)
 
     def speaker(outdata, frames, t, status):
@@ -90,6 +115,11 @@ async def run(args) -> int:
         outdata[:len(block), 0] = block
         outdata[len(block):, 0] = 0
 
+    try:
+        print(f"Microphone: {sd.query_devices(kind='input')['name']}")
+        print(f"Speaker:    {sd.query_devices(kind='output')['name']}")
+    except Exception:
+        pass
     session.start()
     with sd.InputStream(samplerate=DEVICE_RATE, channels=1, dtype="int16", blocksize=BLOCK, callback=mic), \
          sd.OutputStream(samplerate=DEVICE_RATE, channels=1, dtype="int16", blocksize=BLOCK, callback=speaker):
@@ -102,6 +132,15 @@ async def run(args) -> int:
             reason = "caller_hangup"
         await session.on_call_end(reason)
 
+    mic_file = Path(config.storage.audio_dir) / f"{call_id}-mic.wav"
+    if heard:
+        write_wav(mic_file, np.concatenate(heard))
+        loud = sorted(levels)[int(len(levels) * 0.95)] if levels else -120
+        print(f"Mic: loudest moments about {loud:.0f} dBFS (speech should reach -30 or higher). "
+              f"What the bot heard: {mic_file}")
+        if loud < -40:
+            print("  Your microphone is very quiet: raise its level in Windows Sound settings, "
+                  "or pick another input device.")
     print("Building the record ...")
     await s.calls.wait_idle()
     call = s.db.get_call(call_id)
@@ -124,6 +163,9 @@ def main() -> int:
     p.add_argument("--config", default="config.yaml")
     p.add_argument("--number", default="+919800000001", help="caller ID to pretend, for rules")
     args = p.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    for noisy in ("httpx", "urllib3", "huggingface_hub", "transformers"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     try:
         return asyncio.run(run(args))
     except KeyboardInterrupt:
