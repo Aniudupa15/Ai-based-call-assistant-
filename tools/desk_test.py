@@ -99,8 +99,13 @@ async def run(args) -> int:
     heard: list[np.ndarray] = []      # exactly what the bot received, saved for checking
     levels: list[float] = []
 
+    gain = args.gain
+
     def mic(indata, frames, t, status):
-        pcm8 = down_to_8k(indata[:, 0])
+        block = indata[:, 0]
+        if gain != 1.0:
+            block = np.clip(block.astype(np.float32) * gain, -32768, 32767).astype("<i2")
+        pcm8 = down_to_8k(block)
         heard.append(pcm8)
         levels.append(rms_dbfs(pcm8))
         data = pcm8.tobytes()[:FRAME_BYTES].ljust(FRAME_BYTES, b"\x00")
@@ -116,13 +121,17 @@ async def run(args) -> int:
         outdata[len(block):, 0] = 0
 
     try:
-        print(f"Microphone: {sd.query_devices(kind='input')['name']}")
-        print(f"Speaker:    {sd.query_devices(kind='output')['name']}")
+        mic_name = sd.query_devices(args.input, kind='input')['name']
+        spk_name = sd.query_devices(args.output, kind='output')['name']
+        print(f"Microphone: {mic_name}" + (f"  (gain x{args.gain:g})" if args.gain != 1 else ""))
+        print(f"Speaker:    {spk_name}")
     except Exception:
         pass
     session.start()
-    with sd.InputStream(samplerate=DEVICE_RATE, channels=1, dtype="int16", blocksize=BLOCK, callback=mic), \
-         sd.OutputStream(samplerate=DEVICE_RATE, channels=1, dtype="int16", blocksize=BLOCK, callback=speaker):
+    with sd.InputStream(samplerate=DEVICE_RATE, channels=1, dtype="int16", blocksize=BLOCK,
+                        callback=mic, device=args.input), \
+         sd.OutputStream(samplerate=DEVICE_RATE, channels=1, dtype="int16", blocksize=BLOCK,
+                         callback=speaker, device=args.output):
         print("Speak now. Ctrl-C hangs up.")
         reason = "pc_hangup"
         try:
@@ -162,7 +171,16 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--config", default="config.yaml")
     p.add_argument("--number", default="+919800000001", help="caller ID to pretend, for rules")
+    p.add_argument("--list-devices", action="store_true", help="show audio devices and exit")
+    p.add_argument("--input", type=int, default=None, help="microphone device number")
+    p.add_argument("--output", type=int, default=None, help="speaker device number")
+    p.add_argument("--gain", type=float, default=1.0, help="boost a quiet microphone, e.g. 4")
     args = p.parse_args()
+    if args.list_devices:
+        import sounddevice as sd
+
+        print(sd.query_devices())
+        return 0
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     for noisy in ("httpx", "urllib3", "huggingface_hub", "transformers"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
