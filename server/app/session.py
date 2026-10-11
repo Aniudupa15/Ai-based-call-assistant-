@@ -444,23 +444,28 @@ class Session:
         stream = self.engines.llm.stream_chat(messages)
         it = stream.__aiter__()
         filler_s = self.config.call.filler_after_ms / 1000
+        pending: asyncio.Future | None = None
         try:
             while True:
-                wait = None
+                if pending is None:
+                    pending = asyncio.ensure_future(it.__anext__())
                 if not spoken and not filler_played:
                     # Only a slow language model earns the filler, not slow transcription.
+                    # asyncio.wait (not wait_for) so the timeout never cancels the stream.
                     wait = max(0.0, filler_s - (time.monotonic() - t_llm))
+                    done, _ = await asyncio.wait({pending}, timeout=wait)
+                    if not done:
+                        filler_played = True
+                        timing["slow"] = True
+                        self.player.enqueue(self.engines.phrases.get("one_moment", self.language))
+                        continue
                 try:
-                    chunk = await asyncio.wait_for(it.__anext__(), wait) if wait is not None \
-                        else await it.__anext__()
-                except asyncio.TimeoutError:
-                    # The model is slow: a short filler covers the gap; logged for tuning.
-                    filler_played = True
-                    timing["slow"] = True
-                    self.player.enqueue(self.engines.phrases.get("one_moment", self.language))
-                    continue
+                    chunk = await pending
                 except StopAsyncIteration:
                     break
+                finally:
+                    if pending.done():
+                        pending = None
                 if first_token is None:
                     first_token = time.monotonic()
                     timing["first_token_ms"] = int((first_token - t_llm) * 1000)
@@ -470,6 +475,8 @@ class Session:
             if rest:
                 await speak(rest)
         except asyncio.CancelledError:
+            if pending is not None and not pending.done():
+                pending.cancel()
             # Barge-in: keep only what the caller actually heard.
             spoken[:] = [text for text, seg in turn.parts if seg.sent > 0]
             raise

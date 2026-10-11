@@ -75,3 +75,36 @@ def test_barge_in_clears_audio(config, tmp_path):
     assert not any("And more." in t for t in bot_texts)
     assert bot_texts[-1].startswith("Thank you")
     assert link.audio > 100   # paced frames, silence included
+
+
+def test_slow_model_reply_is_not_cut_off(config, tmp_path):
+    """The 'one moment' filler must not cancel a reply that is still being written."""
+    config.call.filler_after_ms = 100
+    tts = FakeTTS()
+    reply = "Thank you for calling, I will make sure the message reaches Ani today. Goodbye. [END]"
+    engines = Engines(stt=FakeSTT(), llm=FakeLLM([reply], chunk=4, delay=0.03), tts=tts,
+                      phrases=PhraseCache(tts, tmp_path / "ph", "Ani", short_phrases()),
+                      vad_factory=EnergyVad)
+    rule = CallRule("answer", "unknown", None, None, None, "", 180, None)
+    link = FakeLink()
+
+    async def on_finished(s):
+        pass
+
+    async def scenario():
+        s = Session("c-s", "+919812345678", rule, link, engines, config, "Ani", on_finished)
+        s.start()
+        for f in speech(500) + silence(700):
+            s.feed_caller(f)
+        for _ in range(300):
+            if any(m["type"] == "hangup" for m in link.json):
+                break
+            await asyncio.sleep(0.02)
+        await s.on_call_end("pc_hangup")
+        return s
+
+    s = asyncio.run(scenario())
+    bot = [t.text for t in s.turns if t.speaker == "bot"]
+    assert "Thank you for calling, I will make sure the message reaches Ani today. Goodbye." in bot
+    reply_turn = next(t for t in s.turns if t.text.startswith("Thank you for calling"))
+    assert reply_turn.timing.get("slow")   # the filler played while the model was slow
