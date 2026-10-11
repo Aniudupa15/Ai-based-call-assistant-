@@ -156,21 +156,24 @@ def test_two_silences_end_the_call(config):
         assert "Are you still there?" in bot and bot[-1].startswith("Thank you")
 
 
-def test_not_understood_twice(config):
-    with make_client(config, [("", "en"), ("", "en")]) as client:
+def test_not_understood_three_times(config):
+    # Empty transcripts (noise) are ignored; garbled ones count.
+    script = [("", "en"), ("mumble", "en", 0.1), ("mumble", "en", 0.1), ("mumble", "en", 0.1)]
+    with make_client(config, script) as client:
         with client.websocket_connect("/esp", headers=ESP) as ws:
             esp = FakeEsp(ws)
             esp.hello()
             esp.start_call("c-7", "9812345678")
             esp.send(type="call_answered", call_id="c-7")
-            caller_turn(esp)
-            caller_turn(esp)
+            for _ in range(4):
+                caller_turn(esp)
             esp.recv_until("hangup")
             esp.send(type="call_end", call_id="c-7", reason="pc_hangup")
         rec = ready(client, "c-7")
         bot = [t["text"] for t in rec["turns"] if t["speaker"] == "bot"]
-        assert bot[1] == "Sorry, could you say that again?"
+        assert bot[1:3] == ["Sorry, could you say that again?"] * 2
         assert bot[-1].startswith("Sorry, I could not understand")
+        assert len(bot) == 4    # nothing said for the noise
 
 
 def test_time_limit(config):

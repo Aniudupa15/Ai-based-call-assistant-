@@ -19,8 +19,9 @@ import numpy as np
 from . import protocol as P
 from .audio import SILENCE_FRAME, bytes_to_int16, frames, int16_to_float, resample
 from .config import Config
+from .heard import clean_reply, is_echo, is_noise, language_request
 from .langid import ASK_LANGUAGE_PHRASE, LANGUAGE_NAMES, choose_language
-from .llm import SentenceSplitter, strip_end_token
+from .llm import END_TOKEN, SentenceSplitter, strip_end_token
 from .recorder import Recorder
 from .rules import CallRule
 from .stt import SpeechToText
@@ -32,6 +33,10 @@ log = logging.getLogger(__name__)
 PRE_ROLL_FRAMES = 15        # 300 ms kept before speech start so words are not clipped
 HANGUP_WAIT_S = 5.0         # how long to wait for call_end after sending hangup
 MIN_CONFIDENCE = 0.25       # below this a transcript counts as not understood
+UNSURE_CONFIDENCE = 0.5     # below this, with the language unsure, ask for the language
+ECHO_TAIL_FRAMES = 20       # the bot's voice can come back 400 ms after it stops
+MISUNDERSTOOD_LIMIT = 3     # "could you repeat" twice, then "please send a text"
+FINAL_STT_WAIT_S = 30.0     # after a hang-up, time allowed to transcribe the last words
 
 
 class Link(Protocol):
@@ -75,6 +80,19 @@ class Turn:
 
 
 @dataclass
+class Heard:
+    """One transcribed caller turn and what to make of it."""
+    text: str
+    kind: str                         # words | unclear | noise | echo
+    language: str
+    confident: bool
+    confidence: Optional[float]
+    t_eos: float
+    timing: dict
+    chosen_language: Optional[str] = None   # "Kannada" said in answer to the question
+
+
+@dataclass
 class _Event:
     kind: str                         # turn | silence | time_limit | reply_done | ended
     audio: bytes = b""
@@ -89,6 +107,9 @@ class Player:
 
     In real-time mode it sends a frame every 20 ms for the whole call, silence when
     the bot is quiet, so the ESP32 can tell a live link from a dead one.
+
+    While the caller talks the player is paused: queued bot audio is held, not
+    dropped, so a cough or a "hmm" does not cost the caller the bot's reply.
     """
 
     LEAD_S = 0.2
@@ -102,6 +123,7 @@ class Player:
         self._audio_until = 0.0
         self._task: asyncio.Task | None = None
         self._closed = False
+        self.paused = False
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._run(), name="player")
@@ -118,7 +140,19 @@ class Player:
 
     @property
     def speaking(self) -> bool:
+        """Bot audio is reaching the caller now (or within the next 200 ms)."""
+        if self.paused:
+            return False
         return bool(self._queue) or time.monotonic() < self._audio_until
+
+    @property
+    def queued(self) -> bool:
+        return bool(self._queue)
+
+    @property
+    def pending(self) -> bool:
+        """Audio is playing or waiting, held or not."""
+        return bool(self._queue) or self.speaking
 
     def enqueue(self, pcm: np.ndarray) -> Segment:
         seg = Segment(frames(np.asarray(pcm, dtype="<i2").tobytes()))
@@ -127,12 +161,26 @@ class Player:
         self._wake.set()
         return seg
 
+    def pause(self) -> bool:
+        """Holds the queue. Returns True if audio was reaching the caller."""
+        audible = self.speaking
+        self.paused = True
+        self._audio_until = 0.0
+        return audible
+
+    def resume(self) -> None:
+        if self.paused:
+            self.paused = False
+            self._wake.set()
+
     def clear(self) -> None:
         self._queue.clear()
         self._audio_until = 0.0
+        self.paused = False
 
-    async def drain(self) -> None:
-        while self.speaking and not self._closed:
+    async def drain(self, held_too: bool = False) -> None:
+        """Waits until the queue has played. held_too: also wait out a pause."""
+        while not self._closed and (self.speaking or (held_too and self._queue)):
             await asyncio.sleep(0.02)
 
     async def _send(self, seg: Segment, idx: int) -> None:
@@ -147,7 +195,7 @@ class Player:
     async def _run(self) -> None:
         if not self.realtime:
             while not self._closed:
-                while self._queue:
+                while self._queue and not self.paused:
                     seg, idx = self._queue.popleft()
                     await self._send(seg, idx)
                 self._wake.clear()
@@ -158,7 +206,7 @@ class Player:
             now = time.monotonic()
             if clock < now:
                 clock = now
-            if self._queue:
+            if self._queue and not self.paused:
                 if clock - now > self.LEAD_S:
                     await asyncio.sleep(clock - now - self.LEAD_S)
                     continue
@@ -193,8 +241,8 @@ class Session:
 
         cc = config.call
         self.allowed = [l for l in cc.languages if l in LANGUAGE_NAMES] or ["en"]
-        self.language = rule.language_hint if rule.language_hint in self.allowed \
-            else cc.default_language
+        self.hint = rule.language_hint if rule.language_hint in self.allowed else None
+        self.language = self.hint or cc.default_language
         self.max_seconds = min(rule.max_seconds or cc.max_seconds, cc.max_seconds)
 
         self.recorder = Recorder()
@@ -214,13 +262,22 @@ class Session:
         self._turn_buf = bytearray()
         self._turn_start_ms = 0
         self._was_speaking = False
+        self._echo_tail = 0                   # caller frames left in the echo tail
         self._silence_reported = False
         self._time_limit_sent = False
         self._silences = 0
         self._misunderstood = 0
         self._asked_language = False
+        self._language_locked = self.hint is not None
         self._caller_turns = 0
         self._pending_turns = 0
+        self._transcribing = False
+        self._deferred: Heard | None = None   # a reply waiting for the caller to finish
+        self._filler_task: asyncio.Task | None = None
+        self._last_bot_audio_at = 0.0         # when bot audio was last queued
+        self._current_timing: dict | None = None
+        self._ended = False                   # the caller has gone
+        self._hangup_due = False              # the bot said goodbye; a noise turn came in
         self._reply_task: asyncio.Task | None = None
         self._run_task: asyncio.Task | None = None
         self._call_ended = asyncio.Event()
@@ -242,19 +299,36 @@ class Session:
         task = self._run_task
         if task is not None and not task.done():
             if reason != "pc_hangup":
-                task.cancel()  # the caller is gone; nothing more to say
+                # The caller is gone: nothing more to say, but what they said last is
+                # still transcribed so the message is not lost.
+                self._ended = True
+                self.player.clear()
+                if self._collecting and len(self._turn_buf) >= 15 * P.FRAME_BYTES:
+                    self._queue_turn(self.detector.frame)
+                self._collecting = False
+                if self._reply_task and not self._reply_task.done():
+                    self._reply_task.cancel()
+                self.events.put_nowait(_Event("ended"))
             try:
-                await asyncio.wait_for(asyncio.shield(task), HANGUP_WAIT_S + 1)
+                await asyncio.wait_for(asyncio.shield(task), FINAL_STT_WAIT_S)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 task.cancel()
         await self._finish()
 
     # ---- caller audio --------------------------------------------------------
     def feed_caller(self, frame: bytes) -> None:
-        if len(frame) != P.FRAME_BYTES or self.finished or self.answered_at is None:
+        if len(frame) != P.FRAME_BYTES or self.finished or self._ended \
+                or self.answered_at is None:
             return
         self.recorder.add_caller(frame)
-        speaking = self.player.speaking
+        # Just after the bot stops, its voice may still be coming back down the line,
+        # so the stricter barge-in settings stay on a little longer. Counted in frames,
+        # like the rest of turn taking, so a replay behaves the same at any speed.
+        if self.player.speaking:
+            self._echo_tail = ECHO_TAIL_FRAMES
+        elif self._echo_tail:
+            self._echo_tail -= 1
+        speaking = self.player.speaking or self._echo_tail > 0
         if self._was_speaking and not speaking:
             self.detector.reset_silence()
             self._silence_reported = False
@@ -270,8 +344,7 @@ class Session:
 
         if event is not None:
             if event.kind in ("speech_start", "barge_in"):
-                if event.kind == "barge_in":
-                    self._interrupt()
+                self._hold()
                 self._collecting = True
                 self._silence_reported = False
                 # The pre-roll ends with the current frame, so it starts this far back.
@@ -280,17 +353,17 @@ class Session:
                                           * P.FRAME_MS)
                 self._pre_roll.clear()
             elif event.kind == "end_of_turn" and self._collecting:
-                self._collecting = False
-                self._pending_turns += 1
-                self.events.put_nowait(_Event(
-                    "turn", audio=bytes(self._turn_buf), start_ms=self._turn_start_ms,
-                    end_ms=(event.frame + 1) * P.FRAME_MS, detected_at=time.monotonic()))
-                self._turn_buf = bytearray()
+                self._queue_turn(event.frame + 1)
 
-        busy = self._collecting or speaking or (self._reply_task and not self._reply_task.done())
+        # Without real-time pacing (tests, replays) bot audio takes no time to play.
+        playing = self.player.pending if self.config.realtime else False
+        busy = (self._collecting or self._transcribing or self._pending_turns > 0
+                or playing or self._deferred is not None
+                or (self._reply_task is not None and not self._reply_task.done()))
         silence_frames = self.config.call.silence_prompt_s * 1000 // P.FRAME_MS
-        if not busy and not self._silence_reported and \
-                self.detector.silent_frames() >= silence_frames:
+        if busy:
+            self.detector.reset_silence()
+        elif not self._silence_reported and self.detector.silent_frames() >= silence_frames:
             self._silence_reported = True
             self.events.put_nowait(_Event("silence"))
 
@@ -298,14 +371,35 @@ class Session:
             self._time_limit_sent = True
             self.events.put_nowait(_Event("time_limit"))
 
-    def _interrupt(self) -> None:
-        """Barge-in: stop playback now and drop the reply being generated."""
-        if self.player.speaking:
-            self.player.clear()
+    def _queue_turn(self, end_frame: int) -> None:
+        self._collecting = False
+        self._pending_turns += 1
+        self.events.put_nowait(_Event(
+            "turn", audio=bytes(self._turn_buf), start_ms=self._turn_start_ms,
+            end_ms=max(self._turn_start_ms, end_frame * P.FRAME_MS),
+            detected_at=time.monotonic()))
+        self._turn_buf = bytearray()
+
+    def _hold(self) -> None:
+        """The caller started talking: hold the bot's audio until we know what they said.
+
+        A real interruption then drops the rest of the reply; a cough or a line click
+        lets it carry on.
+        """
+        if self.player.pause():
             asyncio.create_task(self._send({"type": P.CLEAR_AUDIO, "call_id": self.call_id}))
+
+    def _drop_bot_audio(self) -> None:
+        """The caller said something real over the bot: what was held is not played.
+
+        Audio queued after the caller stopped (the 'one moment' filler) is not held
+        and plays on."""
+        if not self.player.paused:
+            return
+        had_audio = self.player.queued
+        self.player.clear()
+        if had_audio:
             self._trim_last_bot_turn()
-        if self._reply_task and not self._reply_task.done():
-            self._reply_task.cancel()
 
     def _trim_last_bot_turn(self) -> None:
         """Keeps the transcript and the model's history to what the caller heard."""
@@ -322,46 +416,54 @@ class Session:
                 break
         turn.text = heard
 
+    def _recent_bot_lines(self) -> list[str]:
+        lines: list[str] = []
+        for t in [t for t in self.turns if t.speaker == "bot"][-3:]:
+            lines += [text for text, seg in t.parts if seg.sent > 0] or ([t.text] if t.text else [])
+        return lines
+
     # ---- conversation --------------------------------------------------------
     async def _run(self) -> None:
         try:
-            greeting_lang = self.language if self.rule.language_hint in self.allowed else MULTI
+            greeting_lang = self.language if self.hint else MULTI
             greeting_key = "greeting" if greeting_lang != MULTI else "greeting_short"
-            await self._say_phrase(greeting_key, greeting_lang)
             self.history.append({"role": "assistant",
                                  "content": self.engines.phrases.text(greeting_key, greeting_lang)})
+            await self._say_phrase(greeting_key, greeting_lang)
             while True:
                 ev = await self.events.get()
                 if ev.kind == "ended":
                     break
+                if ev.kind == "turn":
+                    await self._on_turn(ev)
+                    continue
+                if self._ended:
+                    continue
                 if ev.kind == "time_limit":
                     await self._cancel_reply()
+                    self.player.clear()
                     self.end_reason = "time_limit"
                     await self._say_phrase("wrap_up", self.language)
                     await self._hangup()
                     break
                 if ev.kind == "silence":
-                    if self._reply_task and not self._reply_task.done():
+                    if self._busy():
                         continue
                     self._silences += 1
                     if self._silences >= 2:
                         await self._say_phrase("goodbye", self.language)
                         await self._hangup()
                         break
+                    self._silence_reported = False      # count afresh from here
+                    self.detector.reset_silence()
                     await self._say_phrase("still_there", self.language)
                     continue
-                if ev.kind == "turn":
-                    self._pending_turns -= 1
-                    self._silences = 0
-                    await self._cancel_reply()
-                    # Transcription is never cancelled, so no caller words are lost;
-                    # only the reply is.
-                    heard = await self._transcribe(ev)
-                    if self._pending_turns > 0:
-                        continue  # the caller kept talking: answer once, with everything
-                    self._reply_task = asyncio.create_task(self._respond(*heard))
-                    continue
                 if ev.kind == "reply_done" and ev.end_call:
+                    if self._busy():
+                        # The caller may be speaking up again: decide once that turn is
+                        # heard. Real words carry on the call; noise or echo do not.
+                        self._hangup_due = True
+                        continue
                     await self._hangup()
                     break
         except asyncio.CancelledError:
@@ -373,7 +475,94 @@ class Session:
             await self._cancel_reply()
             await self._finish()
 
-    async def _transcribe(self, ev: _Event) -> tuple:
+    def _busy(self) -> bool:
+        return (self._collecting or self._pending_turns > 0 or self._transcribing
+                or self._deferred is not None
+                or (self._reply_task is not None and not self._reply_task.done()))
+
+    async def _on_turn(self, ev: _Event) -> None:
+        self._pending_turns -= 1
+        self._arm_filler(ev.detected_at)
+        self._transcribing = True
+        try:
+            # Transcription is never cancelled, so no caller words are lost; meanwhile
+            # the bot's reply (if any) is held, not dropped.
+            heard = await self._transcribe(ev)
+        finally:
+            self._transcribing = False
+        caller_still_talking = self._pending_turns > 0 or self._collecting
+        if heard.kind in ("noise", "echo"):
+            log.info("[%s] ignored %s turn %r", self.call_id, heard.kind, heard.text)
+            self._disarm_filler()
+            if self._ended or caller_still_talking:
+                return
+            self.player.resume()
+            if self._hangup_due and not self._reply_running():
+                self.events.put_nowait(_Event("reply_done", end_call=True))
+                return
+            if self._deferred is not None and not self._reply_running():
+                self._start_reply(self._deferred)
+            return
+
+        # Real words: whatever the bot was saying, or about to say, is dropped.
+        self._silences = 0
+        self._hangup_due = False
+        await self._cancel_reply()
+        self._drop_bot_audio()
+        self._record_caller(heard, ev)
+        if self._ended:
+            return
+        if caller_still_talking:
+            self._deferred = heard     # answer once, with everything they said
+            return
+        self._start_reply(heard)
+
+    def _arm_filler(self, t_eos: float) -> None:
+        """'One moment please' if the caller would otherwise wait too long in silence,
+        whether transcription or the language model is the slow part."""
+        self._disarm_filler()
+        self._filler_task = asyncio.create_task(self._filler_after(t_eos))
+
+    def _disarm_filler(self) -> None:
+        if self._filler_task and not self._filler_task.done():
+            self._filler_task.cancel()
+        self._filler_task = None
+
+    async def _filler_after(self, t_eos: float) -> None:
+        delay = self.config.call.filler_after_ms / 1000 - (time.monotonic() - t_eos)
+        await asyncio.sleep(max(0.0, delay))
+        if (self._ended or self._hangup_due or self._collecting or self.player.speaking
+                or self._last_bot_audio_at > t_eos):
+            return
+        if not (self._transcribing or self._reply_running() or self._deferred is not None):
+            return
+        if self.player.paused:
+            if self.player.queued:
+                return        # an interrupted reply is on hold; its fate is decided first
+            self.player.resume()
+        self._play_filler()
+        if self._current_timing is not None:
+            self._current_timing["slow"] = True
+
+    def _reply_running(self) -> bool:
+        return self._reply_task is not None and not self._reply_task.done()
+
+    def _start_reply(self, heard: Heard) -> None:
+        self._deferred = None
+        self._reply_task = asyncio.create_task(self._respond(heard))
+
+    def _record_caller(self, heard: Heard, ev: _Event) -> None:
+        self.turns.append(Turn("caller", heard.text, ev.start_ms, ev.end_ms, heard.language,
+                               heard.confidence))
+        if heard.kind != "words":
+            return
+        if self.history and self.history[-1]["role"] == "user":
+            # The caller went on before the bot said anything: one message, not two.
+            self.history[-1]["content"] += " " + heard.text
+        else:
+            self.history.append({"role": "user", "content": heard.text})
+
+    async def _transcribe(self, ev: _Event) -> Heard:
         t_eos = ev.detected_at
         timing = {"eos_wait_ms": self.config.call.end_of_turn_ms}
         audio16 = resample(int16_to_float(bytes_to_int16(ev.audio)), P.SAMPLE_RATE, 16000)
@@ -381,42 +570,57 @@ class Session:
 
         t0 = time.monotonic()
         probs = None
-        if not (self._caller_turns == 0 and self.rule.language_hint in self.allowed):
+        if not (self._caller_turns == 0 and self.hint):
             probs = await asyncio.to_thread(stt.detect_language, audio16)
-        choice = choose_language(probs, self.allowed, self.language, self.rule.language_hint,
-                                 self._caller_turns)
+        choice = choose_language(probs, self.allowed, self.language, self.hint,
+                                 self._caller_turns, locked=self._language_locked)
         transcript = await asyncio.to_thread(stt.transcribe, audio16, choice.language)
         timing["stt_ms"] = int((time.monotonic() - t0) * 1000)
-        self._caller_turns += 1
-        self.language = choice.language
 
         text = transcript.text.strip()
         conf = transcript.confidence
-        self.turns.append(Turn("caller", text, ev.start_ms, ev.end_ms, choice.language, conf))
-        understood = bool(text) and (conf is None or conf >= MIN_CONFIDENCE)
-        if understood:
-            self.history.append({"role": "user", "content": text})
-        return understood, choice.confident, t_eos, timing
+        heard = Heard(text, "words", choice.language, choice.confident, conf, t_eos, timing)
+        self._current_timing = timing
+        if is_noise(text, conf):
+            heard.kind = "noise"
+        elif is_echo(text, self._recent_bot_lines()):
+            heard.kind = "echo"
+        elif conf is not None and conf < MIN_CONFIDENCE:
+            heard.kind = "unclear"
+        if heard.kind in ("noise", "echo"):
+            return heard
 
-    async def _respond(self, understood: bool, confident: bool, t_eos: float,
-                       timing: dict) -> None:
-        if not understood:
+        self._caller_turns += 1
+        asked = language_request(text) if (self._asked_language or len(text) < 40) else None
+        if asked and asked in self.allowed:
+            heard.chosen_language = asked
+            heard.kind = "words"
+            heard.confident = True
+            heard.language = asked
+            self._language_locked = True
+        self.language = heard.language
+        log.info("[%s] caller (%s, conf %s): %s", self.call_id, heard.language,
+                 None if conf is None else round(conf, 2), text)
+        return heard
+
+    async def _respond(self, heard: Heard) -> None:
+        unsure = not heard.confident and (heard.confidence is None
+                                          or heard.confidence < UNSURE_CONFIDENCE)
+        if unsure and not self._asked_language and not self.hint:
+            # Garbled words in a language we are not sure of: probably the wrong one.
+            self._asked_language = True
+            await self._say_phrase(ASK_LANGUAGE_PHRASE, MULTI)
+            return
+        if heard.kind == "unclear":
             self._misunderstood += 1
-            if self._misunderstood >= 2:
+            if self._misunderstood >= MISUNDERSTOOD_LIMIT:
                 await self._say_phrase("send_text", self.language)
                 self.events.put_nowait(_Event("reply_done", end_call=True))
             else:
                 await self._say_phrase("repeat", self.language)
             return
         self._misunderstood = 0
-
-        if not confident and not self._asked_language and \
-                self.rule.language_hint not in self.allowed:
-            self._asked_language = True
-            await self._say_phrase(ASK_LANGUAGE_PHRASE, MULTI)
-            return
-
-        await self._reply(t_eos, timing)
+        await self._reply(heard.t_eos, heard.timing)
 
     async def _reply(self, t_eos: float, timing: dict) -> None:
         messages = [{"role": "system", "content": self._system_prompt()}, *self.history]
@@ -424,7 +628,6 @@ class Session:
         spoken: list[str] = []
         turn = Turn("bot", "", 0, 0, self.language, timing=timing)
         ended = False
-        filler_played = False
         t_llm = time.monotonic()
         first_token: float | None = None
         max_sentences = self.config.call.max_reply_sentences
@@ -433,50 +636,43 @@ class Session:
             nonlocal ended
             sentence, end = strip_end_token(sentence)
             ended = ended or end
-            if not sentence or len(spoken) >= max_sentences:
+            sentence = clean_reply(sentence)
+            # The sentence that ends the call (the goodbye) is always said.
+            if not sentence or (len(spoken) >= max_sentences and not end):
                 return
             audio = await asyncio.to_thread(self.engines.tts.synthesize, sentence, self.language)
             if "first_audio_ms" not in timing:
                 timing["first_audio_ms"] = int((time.monotonic() - t_eos) * 1000)
-            turn.parts.append((sentence, self.player.enqueue(audio)))
+            turn.parts.append((sentence, self._enqueue(audio)))
             spoken.append(sentence)
 
         stream = self.engines.llm.stream_chat(messages)
-        it = stream.__aiter__()
-        filler_s = self.config.call.filler_after_ms / 1000
-        pending: asyncio.Future | None = None
+        overflow: list[str] = []    # sentences past the limit; only a goodbye among them is said
         try:
-            while True:
-                if pending is None:
-                    pending = asyncio.ensure_future(it.__anext__())
-                if not spoken and not filler_played:
-                    # Only a slow language model earns the filler, not slow transcription.
-                    # asyncio.wait (not wait_for) so the timeout never cancels the stream.
-                    wait = max(0.0, filler_s - (time.monotonic() - t_llm))
-                    done, _ = await asyncio.wait({pending}, timeout=wait)
-                    if not done:
-                        filler_played = True
-                        timing["slow"] = True
-                        self.player.enqueue(self.engines.phrases.get("one_moment", self.language))
-                        continue
-                try:
-                    chunk = await pending
-                except StopAsyncIteration:
-                    break
-                finally:
-                    if pending.done():
-                        pending = None
+            async for chunk in stream:
                 if first_token is None:
                     first_token = time.monotonic()
                     timing["first_token_ms"] = int((first_token - t_llm) * 1000)
                 for sentence in splitter.feed(chunk):
-                    await speak(sentence)
+                    if len(spoken) < max_sentences and not overflow:
+                        await speak(sentence)
+                    else:
+                        overflow.append(sentence)
+                if ended or len(overflow) >= 3 or \
+                        any(strip_end_token(o)[1] for o in overflow):
+                    break             # said goodbye, or said enough: stop generating
             rest = splitter.flush()
             if rest:
-                await speak(rest)
+                if len(spoken) < max_sentences and not overflow:
+                    await speak(rest)
+                else:
+                    overflow.append(rest)
+            if not ended and any(strip_end_token(o)[1] for o in overflow):
+                # The model said more than allowed and then goodbye: say the goodbye.
+                said = [clean_reply(strip_end_token(o)[0]) for o in overflow]
+                said = [o for o in said if o]
+                await speak((said[-1] if said else "") + " " + END_TOKEN)
         except asyncio.CancelledError:
-            if pending is not None and not pending.done():
-                pending.cancel()
             # Barge-in: keep only what the caller actually heard.
             spoken[:] = [text for text, seg in turn.parts if seg.sent > 0]
             raise
@@ -493,11 +689,24 @@ class Session:
                 turn.text = " ".join(spoken)
                 self.turns.append(turn)
                 self.history.append({"role": "assistant", "content": turn.text})
-            log.info("[%s] turn timing %s", self.call_id, timing)
+            log.info("[%s] bot: %s  timing %s", self.call_id, turn.text, timing)
 
+        if not spoken:
+            # The model said nothing usable; do not leave the caller in silence.
+            await self._say_phrase("repeat", self.language)
         if ended:
-            await self.player.drain()
+            await self.player.drain(held_too=True)
         self.events.put_nowait(_Event("reply_done", end_call=ended))
+
+    def _enqueue(self, audio: np.ndarray) -> Segment:
+        self._last_bot_audio_at = time.monotonic()
+        return self.player.enqueue(audio)
+
+    def _play_filler(self) -> None:
+        text = self.engines.phrases.text("one_moment", self.language)
+        seg = self._enqueue(self.engines.phrases.get("one_moment", self.language))
+        self.turns.append(Turn("bot", text, 0, 0, self._phrase_language(self.language),
+                               parts=[(text, seg)]))
 
     def _system_prompt(self) -> str:
         template = (PROMPTS_DIR / "system.txt").read_text(encoding="utf-8")
@@ -505,12 +714,22 @@ class Session:
                                language=LANGUAGE_NAMES.get(self.language, "English"),
                                rule_specific_lines=self.rule.extra_prompt or "")
 
+    def _phrase_language(self, language: str) -> str:
+        """The language a fixed phrase is actually spoken in."""
+        langs = self.config.call.phrase_languages or ["en"]
+        if language == MULTI:
+            return langs[0]
+        return language if language in langs else langs[0]
+
     async def _say_phrase(self, key: str, language: str) -> None:
+        if self._ended:
+            return
+        self.player.resume()
         audio = self.engines.phrases.get(key, language)
-        seg = self.player.enqueue(audio)
-        self.turns.append(Turn("bot", self.engines.phrases.text(key, language), 0, 0,
-                               language if language != MULTI else "en",
-                               parts=[(self.engines.phrases.text(key, language), seg)]))
+        text = self.engines.phrases.text(key, language)
+        seg = self._enqueue(audio)
+        self.turns.append(Turn("bot", text, 0, 0, self._phrase_language(language),
+                               parts=[(text, seg)]))
         await self.player.drain()
 
     async def _cancel_reply(self) -> None:
@@ -523,6 +742,9 @@ class Session:
                 pass
 
     async def _hangup(self) -> None:
+        if self._ended:
+            return
+        self.player.resume()          # the goodbye is played out even if held
         await self.player.drain()
         if self.end_reason is None:
             self.end_reason = "pc_hangup"

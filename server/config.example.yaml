@@ -15,8 +15,8 @@ call:
   end_of_turn_ms: 600
   barge_in_ms: 300
   silence_prompt_s: 6
-  filler_after_ms: 1200          # play "one moment" if no reply sentence by then
-  max_reply_sentences: 2
+  filler_after_ms: 2500          # "one moment please" if the reply has not started by then
+  max_reply_sentences: 3
   languages: [en, hi, kn]
   default_language: en
   phrase_languages: [en]         # fixed lines (greeting, goodbye, voicemail) in English only;

@@ -79,7 +79,7 @@ def test_barge_in_clears_audio(config, tmp_path):
 
 def test_slow_model_reply_is_not_cut_off(config, tmp_path):
     """The 'one moment' filler must not cancel a reply that is still being written."""
-    config.call.filler_after_ms = 100
+    config.call.filler_after_ms = 10    # before the first chunk (30 ms) arrives
     tts = FakeTTS()
     reply = "Thank you for calling, I will make sure the message reaches Ani today. Goodbye. [END]"
     engines = Engines(stt=FakeSTT(), llm=FakeLLM([reply], chunk=4, delay=0.03), tts=tts,
@@ -94,6 +94,7 @@ def test_slow_model_reply_is_not_cut_off(config, tmp_path):
     async def scenario():
         s = Session("c-s", "+919812345678", rule, link, engines, config, "Ani", on_finished)
         s.start()
+        await asyncio.sleep(0.05)          # the greeting is playing
         for f in speech(500) + silence(700):
             s.feed_caller(f)
         for _ in range(300):
@@ -108,3 +109,4 @@ def test_slow_model_reply_is_not_cut_off(config, tmp_path):
     assert "Thank you for calling, I will make sure the message reaches Ani today. Goodbye." in bot
     reply_turn = next(t for t in s.turns if t.text.startswith("Thank you for calling"))
     assert reply_turn.timing.get("slow")   # the filler played while the model was slow
+    assert "Hi." in bot                    # ... and is in the transcript (short_phrases)

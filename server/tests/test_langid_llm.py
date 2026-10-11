@@ -53,3 +53,10 @@ def test_sentence_splitter_danda():
 def test_end_token():
     assert strip_end_token("Goodbye. [END]") == ("Goodbye.", True)
     assert strip_end_token("Hello.") == ("Hello.", False)
+
+
+def test_end_marker_variants():
+    assert strip_end_token("Goodbye [end]") == ("Goodbye", True)
+    assert strip_end_token("Bye. <END>") == ("Bye.", True)
+    assert strip_end_token("Bye. END") == ("Bye.", True)
+    assert strip_end_token("Call by the end of the month.") == ("Call by the end of the month.", False)

@@ -17,13 +17,14 @@ from .stt import Transcript
 
 
 class FakeSTT:
-    """Returns scripted transcripts in order; (text, language) pairs."""
+    """Returns scripted transcripts in order: (text, language) or (text, language,
+    confidence)."""
 
-    def __init__(self, script: list[tuple[str, str]] | None = None):
-        self.script: deque[tuple[str, str]] = deque(script or [])
+    def __init__(self, script: list[tuple] | None = None):
+        self.script: deque[tuple] = deque(script or [])
         self.default = ("Hello, this is a test caller.", "en")
 
-    def _peek(self) -> tuple[str, str]:
+    def _peek(self) -> tuple:
         return self.script[0] if self.script else self.default
 
     def detect_language(self, audio16k: np.ndarray) -> dict[str, float]:
@@ -31,8 +32,10 @@ class FakeSTT:
         return {lang: 0.9, **{l: 0.05 for l in ("en", "hi", "kn") if l != lang}}
 
     def transcribe(self, audio16k: np.ndarray, language: str) -> Transcript:
-        text, lang = self.script.popleft() if self.script else self.default
-        return Transcript(text, language or lang, 0.9 if text else None)
+        item = self.script.popleft() if self.script else self.default
+        text, lang = item[0], item[1]
+        conf = item[2] if len(item) > 2 else (0.9 if text else None)
+        return Transcript(text, language or lang, conf)
 
 
 class FakeLLM:

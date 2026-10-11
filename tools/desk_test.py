@@ -3,8 +3,9 @@
 
 The real pipeline runs (VAD, speech-to-text, language model, speech synthesis,
 recording, post-call summary) with the PC's audio standing in for the phone line,
-and the call is saved like any other record. Use headphones, or the bot hears
-itself and keeps stopping.
+and the call is saved like any other record. The microphone is muted while the
+bot talks so laptop speakers do not make it hear itself; with headphones, add
+--barge-in to be able to talk over it.
 
     cd server && .venv/bin/python ../tools/desk_test.py --config config.yaml [--number +9198...]
 
@@ -28,7 +29,7 @@ sys.path.insert(0, str(SERVER))
 
 from app.audio import rms_dbfs, write_wav  # noqa: E402
 from app.config import load_config  # noqa: E402
-from app.main import create_app  # noqa: E402
+from app.main import _warm, create_app  # noqa: E402
 from app.protocol import FRAME_BYTES  # noqa: E402
 from app.session import Session  # noqa: E402
 
@@ -71,6 +72,14 @@ class SpeakerLink:
             pass
 
     async def send_json(self, msg: dict) -> None:
+        if msg["type"] == "clear_audio":
+            # Like the ESP32: drop what is buffered so the bot stops at once.
+            while not self.out.empty():
+                try:
+                    self.out.get_nowait()
+                except queue.Empty:
+                    break
+            return
         print(f"   <- {msg['type']}")
         if msg["type"] == "hangup":
             self.hangup.set()
@@ -90,6 +99,11 @@ async def run(args) -> int:
     if rule.action != "answer":
         print("This number's rule does not answer; pick another --number.")
         return 1
+    print("Loading and warming the models (the first run of each is slow) ...")
+    t0 = time.monotonic()
+    await _warm(s)
+    print(f"  ready in {time.monotonic() - t0:.1f} s"
+          + (f"  {s.engines.stt.timings}" if getattr(s.engines.stt, "timings", None) else ""))
     s.calls.create_live(call_id, number, rule, int(time.time()))
 
     link = SpeakerLink()
@@ -106,8 +120,9 @@ async def run(args) -> int:
         if gain != 1.0:
             block = np.clip(block.astype(np.float32) * gain, -32768, 32767).astype("<i2")
         pcm8 = down_to_8k(block)
-        if not args.barge_in and session.player.speaking:
-            # Laptop speakers leak into the mic; ignore it while the bot talks.
+        if not args.barge_in and (session.player.speaking or session._echo_tail > 0):
+            # Laptop speakers leak into the mic; ignore it while the bot talks (and for
+            # the sound card's buffer and the room's echo just after).
             pcm8 = np.zeros_like(pcm8)
         heard.append(pcm8)
         levels.append(rms_dbfs(pcm8))

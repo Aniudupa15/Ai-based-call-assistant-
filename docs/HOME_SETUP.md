@@ -70,12 +70,16 @@ The doctor prints your GPU and **suggests model sizes**. Then:
    ```bash
    .venv/bin/python ../tools/make_greetings.py --config config.yaml --card ../sdcard
    ```
-6. **Talk to the bot** with headphones on:
+6. **Talk to the bot** with the laptop's mic and speakers:
    ```bash
    pip install sounddevice   # if the installer didn't
    .venv/bin/python ../tools/desk_test.py --config config.yaml
    ```
-   Try English, Hindi and Kannada, and mixed Kannada-English. Interrupt it once.
+   It warms the models first (about 10–30 s), then greets you. The mic is muted
+   while the bot talks, so wait for it to finish; with headphones, add `--barge-in`
+   to be able to interrupt it. Try English, Hindi and Kannada, and mixed
+   Kannada-English. If something goes wrong, the log lines show what the bot heard
+   (`caller (en, conf 0.8): ...`) and what it ignored as noise or echo.
 7. Check the speed:
    ```bash
    .venv/bin/python ../tools/timing_report.py --db data/calls.db
@@ -85,7 +89,7 @@ The doctor prints your GPU and **suggests model sizes**. Then:
 - [ ] The bot greets, understands you and replies in **English**.
 - [ ] Same in **Hindi**.
 - [ ] Same in **Kannada**.
-- [ ] Interrupting stops the bot.
+- [ ] With headphones and `--barge-in`, interrupting stops the bot.
 - [ ] The printed record has a sensible reason and severity.
 - [ ] Timing report: most replies under 1.5 s (if not, note the medians it prints).
 

@@ -26,8 +26,8 @@ class CallConfig(BaseModel):
     end_of_turn_ms: int = 600
     barge_in_ms: int = 300
     silence_prompt_s: int = 6
-    filler_after_ms: int = 1200
-    max_reply_sentences: int = 2
+    filler_after_ms: int = 2500         # "one moment please" if no reply this long after the caller stops
+    max_reply_sentences: int = 3       # extra sentences are not spoken; a goodbye always is
     languages: list[str] = Field(default_factory=lambda: ["en", "hi", "kn"])
     default_language: str = "en"
     # Languages of the fixed recorded lines (greeting, "could you repeat", goodbye, the

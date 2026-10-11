@@ -44,6 +44,8 @@ tools/      doctor.py        checks the PC is ready and suggests model sizes for
             desk_test.py     phase 1: talk to the bot with the PC's mic and speakers
             modem_bench.py   phase 2: module checks over a USB-serial adapter
             replay_call.py   feed a recorded call into the server without hardware
+            sim_calls.py     simulated callers (pauses, coughs, echo, interruptions,
+                             misheard languages, hang-ups) against the real call logic
             make_greetings.py  phrase cache and microSD greeting files
             timing_report.py / severity_report.py  check the reply-delay and severity targets
 ```
@@ -57,7 +59,8 @@ any machine before the GPU models or the module are set up.
 cd server
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest                                   # 59 tests, including full simulated calls
+pytest                                   # ~90 tests, including full simulated calls
+python ../tools/sim_calls.py             # watch simulated calls: transcripts and timings
 
 cp config.example.yaml config.yaml       # set models.backend: fake for now
 python -m app.main --config config.yaml  # listens on :8765
