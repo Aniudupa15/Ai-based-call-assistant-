@@ -84,12 +84,37 @@ class IndicConformerSTT:
             if not (path / "config.json").exists():
                 log.info("downloading %s to %s", model_name, path)
                 snapshot_download(model_name, local_dir=str(path))
-        self.model = AutoModel.from_pretrained(str(path), trust_remote_code=True)
+        self.model = self._load_local(path) or AutoModel.from_pretrained(
+            str(path), trust_remote_code=True)
         if hasattr(self.model, "to"):
             try:
                 self.model = self.model.to(device)
             except Exception:  # some remote-code models manage their own device
                 log.info("IndicConformer stays on its default device")
+
+    @staticmethod
+    def _load_local(path):
+        """Builds the model straight from the downloaded folder.
+
+        The model's own from_pretrained() treats its argument as a Hub repo id, which a
+        Windows folder path is not, so its class is instantiated directly instead.
+        """
+        import importlib.util
+
+        code = path / "model_onnx.py"
+        if not code.exists():
+            return None
+        try:
+            spec = importlib.util.spec_from_file_location("indic_conformer_onnx", code)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            cfg_cls = mod.IndicASRConfig
+            model_cls = next(obj for obj in vars(mod).values()
+                             if isinstance(obj, type) and getattr(obj, "config_class", None) is cfg_cls)
+            return model_cls(cfg_cls(ts_folder=str(path)))
+        except Exception as e:
+            log.warning("loading IndicConformer from %s directly failed: %s", path, e)
+            return None
 
     def transcribe(self, audio16k: np.ndarray, language: str) -> Transcript:
         wav = self._torch.from_numpy(audio16k.astype(np.float32)).unsqueeze(0)
