@@ -45,3 +45,23 @@ def test_voice_change_uses_a_new_cache_folder(tmp_path):
     a, b = Config(), Config()
     b.models.tts_english = "kokoro:af_heart"
     assert voice_tag(a) != voice_tag(b)
+
+
+def test_kokoro_hindi_speaker_reads_english_with_english_rules(monkeypatch):
+    import sys
+    import types
+
+    made = []
+
+    class FakePipe:
+        def __init__(self, lang_code, model=True, device=None, repo_id=None):
+            made.append(lang_code)
+            self.model = object()
+            self.g2p = types.SimpleNamespace(fallback=object())
+
+    monkeypatch.setitem(sys.modules, "kokoro", types.SimpleNamespace(KPipeline=FakePipe))
+    from app.tts import KokoroTTS
+
+    KokoroTTS({"en": "hf_alpha", "hi": "hf_beta"})
+    KokoroTTS({"en": "bf_emma"})
+    assert made == ["a", "h", "b"]

@@ -34,8 +34,9 @@ models:
   stt_indic: "ai4bharat/indic-conformer-600m-multilingual"
   llm: "qwen2.5:3b-instruct"     # Ollama model name; 7b needs about 6 GB of GPU memory
   ollama_url: "http://127.0.0.1:11434"
-  tts_english: "kokoro:af_heart"  # natural voice (pip install kokoro); or a Piper file such as
-                                 # "voices/en_US-lessac-medium.onnx". Try voices: tools/voice_test.py
+  tts_english: "kokoro:hf_alpha"  # Indian-accented English (Kokoro's Hindi speakers: hf_alpha,
+                                 # hf_beta, hm_omega, hm_psi); kokoro:af_heart is American, or a
+                                 # Piper file. Compare them all with tools/voice_test.py
   tts_hindi: "kokoro:hf_alpha"   # Kokoro Hindi voice; "" uses tts_indic (MMS) for Hindi too
   tts_device: "cpu"
   tts_indic: "mms"               # mms (fast, CPU) or ai4bharat/indic-parler-tts (GPU)
