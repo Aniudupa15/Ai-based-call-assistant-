@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import AsyncIterator, Protocol
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 END_TOKEN = "[END]"
 
@@ -19,11 +22,16 @@ class LanguageModel(Protocol):
 
 
 class OllamaLLM:
-    def __init__(self, url: str, model: str, max_tokens: int = 120, temperature: float = 0.4):
+    def __init__(self, url: str, model: str, max_tokens: int = 120, temperature: float = 0.4,
+                 num_ctx: int = 2048):
         self.url = url.rstrip("/")
         self.model = model
         self.max_tokens = max_tokens
         self.temperature = temperature
+        # The same context size on every request: changing it makes Ollama reload the
+        # model. 2048 tokens hold a whole 3-minute call and keep GPU memory small.
+        self.num_ctx = num_ctx
+        self.gpu_share: float | None = None
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0))
 
     async def stream_chat(self, messages: list[dict]) -> AsyncIterator[str]:
@@ -32,7 +40,8 @@ class OllamaLLM:
             "messages": messages,
             "stream": True,
             "keep_alive": -1,
-            "options": {"num_predict": self.max_tokens, "temperature": self.temperature},
+            "options": {"num_predict": self.max_tokens, "temperature": self.temperature,
+                        "num_ctx": self.num_ctx},
         }
         async with self._client.stream("POST", f"{self.url}/api/chat", json=body) as resp:
             resp.raise_for_status()
@@ -53,17 +62,34 @@ class OllamaLLM:
             "stream": False,
             "format": "json",
             "keep_alive": -1,
-            "options": {"temperature": 0.1},
+            "options": {"temperature": 0.1, "num_ctx": self.num_ctx},
         }
         resp = await self._client.post(f"{self.url}/api/chat", json=body)
         resp.raise_for_status()
         return resp.json().get("message", {}).get("content", "")
 
     async def warm(self) -> None:
-        """Loads the model into GPU memory so the first call is not slow."""
+        """Loads the model into GPU memory so the first call is not slow, and warns if
+        it does not fit: layers left on the CPU make every reply many times slower."""
         await self._client.post(f"{self.url}/api/generate",
-                                json={"model": self.model, "keep_alive": -1,
-                                      "prompt": "Hello", "options": {"num_predict": 1}})
+                                json={"model": self.model, "keep_alive": -1, "prompt": "Hello",
+                                      "options": {"num_predict": 1, "num_ctx": self.num_ctx}})
+        try:
+            resp = await self._client.get(f"{self.url}/api/ps")
+            for m in resp.json().get("models", []):
+                if m.get("name") == self.model or m.get("model") == self.model:
+                    size, vram = m.get("size") or 0, m.get("size_vram") or 0
+                    self.gpu_share = vram / size if size else None
+            if self.gpu_share is not None and self.gpu_share < 0.95:
+                log.warning(
+                    "only %d%% of %s is on the GPU; the rest runs on the CPU and replies "
+                    "will be slow. Free GPU memory (close other GPU programs, or set "
+                    "models.device: cpu so Whisper leaves the GPU to the language model) "
+                    "or pick a smaller model.", int(self.gpu_share * 100), self.model)
+            elif self.gpu_share is not None:
+                log.info("%s is fully on the GPU", self.model)
+        except Exception as e:
+            log.info("could not ask Ollama where the model runs: %s", e)
 
     async def aclose(self) -> None:
         await self._client.aclose()

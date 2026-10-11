@@ -77,7 +77,7 @@ def test_full_bot_call(config):
 
 def test_language_hint_and_translation(config):
     config.call.phrase_languages = ["en", "hi", "kn"]
-    with make_client(config, [("ನಮಸ್ಕಾರ, ನಾನು ಅಮ್ಮ.", "kn"), ("ಬೇಗ ಕರೆ ಮಾಡು.", "kn")]) as client:
+    with make_client(config, [("ನಮಸ್ಕಾರ, ನಾನು ಅಮ್ಮ.", "kn"), ("ಮನೆ ಬಗ್ಗೆ ಮಾತಾಡಬೇಕು, ಬೇಗ ಕರೆ ಮಾಡು.", "kn")]) as client:
         r = client.post("/api/contacts", headers=APP,
                         json={"name": "Amma", "number": "+919811111111", "group": "family",
                               "language_hint": "kn"})

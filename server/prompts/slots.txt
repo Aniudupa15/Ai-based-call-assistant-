@@ -1,0 +1,8 @@
+A caller is leaving a phone message for {owner_name}. Everything the caller has said so far (it may be in Hindi or Kannada):
+{caller}
+
+Return only JSON in exactly this shape:
+{{"name": "the caller's own name, or null", "reason": "why they are calling, in English, or null", "finished": false}}
+
+"finished" is true only if the caller said goodbye, said that is all, or refuses to say more.
+{owner_name} is the person being called. Saying "I want to talk to {owner_name}" is not a reason, and {owner_name} is not the caller's name.

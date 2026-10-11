@@ -64,6 +64,13 @@ class FakeLLM:
     async def complete_json(self, messages: list[dict]) -> str:
         prompt = messages[-1]["content"]
         self.json_calls.append(prompt)
+        if prompt.startswith("A caller is leaving a phone message"):
+            caller = prompt.split("so far", 1)[-1].split("Return only JSON", 1)[0]
+            name = re.search(r"(?:this is|i am|my name is|मैं|ನಾನು) (\S+)", caller, re.I)
+            reason = re.search(r"about|because|parcel|पार्सल|बारे|ಬಗ್ಗೆ|ಪಾರ್ಸೆಲ್|घर", caller, re.I)
+            return json.dumps({"name": name.group(1) if name else None,
+                               "reason": "stated" if reason else None,
+                               "finished": bool(re.search(r"that is all|bye", caller, re.I))})
         if prompt.startswith("Translate"):
             lines = re.findall(r"^(\d+): (.*)$", prompt, re.M)
             return json.dumps({"lines": [{"seq": int(s), "en": f"(English) {t}"}
