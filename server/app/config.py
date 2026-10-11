@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field
 class OwnerConfig(BaseModel):
     name: str = "the owner"
     number: str = ""
+    # How English speech should say the name, if it gets it wrong: a respelling such
+    # as "Uh-nee-rood-ha". Only the voice uses it; transcripts keep the real name.
+    say_as: str = ""
 
 
 class NetworkConfig(BaseModel):
@@ -26,7 +29,7 @@ class CallConfig(BaseModel):
     end_of_turn_ms: int = 600
     barge_in_ms: int = 300
     silence_prompt_s: int = 6
-    filler_after_ms: int = 2500         # "one moment please" if no reply this long after the caller stops
+    filler_after_ms: int = 3500         # "one moment please" if no reply this long after the caller stops
     max_reply_sentences: int = 3       # extra sentences are not spoken; a goodbye always is
     languages: list[str] = Field(default_factory=lambda: ["en", "hi", "kn"])
     default_language: str = "en"
@@ -48,7 +51,11 @@ class ModelsConfig(BaseModel):
     stt_indic: str = "ai4bharat/indic-conformer-600m-multilingual"
     llm: str = "qwen2.5:7b-instruct"
     ollama_url: str = "http://127.0.0.1:11434"
+    # A Piper voice file, or "kokoro:<voice>" (kokoro:af_heart, kokoro:bf_emma ...).
     tts_english: str = "voices/en_US-lessac-medium.onnx"
+    # Hindi voice: "" uses tts_indic; "kokoro:hf_alpha" (or hf_beta, hm_omega, hm_psi).
+    tts_hindi: str = ""
+    tts_device: str = "cpu"             # Kokoro; the GPU is kept for the language model
     # "mms" uses Meta's small MMS-TTS voices (fast, runs on the CPU); anything else is
     # an Indic Parler-TTS model name (better voice, needs a GPU with spare memory).
     tts_indic: str = "mms"

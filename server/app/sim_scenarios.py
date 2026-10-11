@@ -21,13 +21,13 @@ SCENARIOS: list[Scenario] = [
         Say("Hello, my name is Priya, I am calling about tomorrow's meeting."),
         WaitBot(),
     ]),
-    Scenario("slow_model", "first token after 1.8 s: one filler, the full reply after it", [
+    Scenario("slow_model", "first token after 3 s: one filler, the full reply after it", [
         WaitBot(),
         Say("Hi, this is Ramesh."),
         WaitBot(),
         Say("It is about the electricity bill."),
         WaitBot(),
-    ], llm={"first_token_s": 1.8, "tokens_per_s": 12}, call={"reply_mode": "llm"}),
+    ], llm={"first_token_s": 3.0, "tokens_per_s": 12}, call={"reply_mode": "llm"}),
     Scenario("slow_stt", "transcription takes 3 s: no 'are you still there' meanwhile", [
         WaitBot(),
         Say("Hi, this is Ramesh, calling about the parcel."),
