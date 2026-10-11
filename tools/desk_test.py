@@ -106,6 +106,9 @@ async def run(args) -> int:
         if gain != 1.0:
             block = np.clip(block.astype(np.float32) * gain, -32768, 32767).astype("<i2")
         pcm8 = down_to_8k(block)
+        if not args.barge_in and session.player.speaking:
+            # Laptop speakers leak into the mic; ignore it while the bot talks.
+            pcm8 = np.zeros_like(pcm8)
         heard.append(pcm8)
         levels.append(rms_dbfs(pcm8))
         data = pcm8.tobytes()[:FRAME_BYTES].ljust(FRAME_BYTES, b"\x00")
@@ -175,6 +178,8 @@ def main() -> int:
     p.add_argument("--input", type=int, default=None, help="microphone device number")
     p.add_argument("--output", type=int, default=None, help="speaker device number")
     p.add_argument("--gain", type=float, default=1.0, help="boost a quiet microphone, e.g. 4")
+    p.add_argument("--barge-in", action="store_true",
+                   help="let you talk over the bot (use headphones, or it hears itself)")
     args = p.parse_args()
     if args.list_devices:
         import sounddevice as sd

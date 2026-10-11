@@ -44,24 +44,29 @@ class WhisperSTT:
         if compute_type == "auto":
             compute_type = "int8_float16" if device == "cuda" else "int8"
         self.model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        self._last: tuple | None = None   # (audio, language, Transcript) from detect_language
 
-    def detect_language(self, audio16k: np.ndarray) -> dict[str, float]:
-        if hasattr(self.model, "detect_language"):
-            _lang, _prob, all_probs = self.model.detect_language(audio16k)
-            return dict(all_probs)
-        _segments, info = self.model.transcribe(audio16k, beam_size=1)
-        return dict(info.all_language_probs or [(info.language, info.language_probability)])
-
-    def transcribe(self, audio16k: np.ndarray, language: str) -> Transcript:
-        segments, _info = self.model.transcribe(
+    def _run(self, audio16k: np.ndarray, language: str | None):
+        segments, info = self.model.transcribe(
             audio16k, language=language, beam_size=1, vad_filter=False,
             condition_on_previous_text=False)
         segs = list(segments)
         text = " ".join(s.text.strip() for s in segs).strip()
-        conf = None
-        if segs:
-            conf = float(math.exp(sum(s.avg_logprob for s in segs) / len(segs)))
-        return Transcript(text, language, conf)
+        conf = float(math.exp(sum(s.avg_logprob for s in segs) / len(segs))) if segs else None
+        return info, Transcript(text, info.language, conf)
+
+    def detect_language(self, audio16k: np.ndarray) -> dict[str, float]:
+        # One pass detects the language and transcribes; transcribe() reuses the text
+        # when it is asked for the same audio in the detected language.
+        info, transcript = self._run(audio16k, None)
+        self._last = (audio16k, info.language, transcript)
+        return dict(info.all_language_probs or [(info.language, info.language_probability)])
+
+    def transcribe(self, audio16k: np.ndarray, language: str) -> Transcript:
+        last, self._last = self._last, None
+        if last is not None and last[0] is audio16k and last[1] == language:
+            return last[2]
+        return self._run(audio16k, language)[1]
 
 
 class IndicConformerSTT:
