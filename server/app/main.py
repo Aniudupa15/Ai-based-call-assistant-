@@ -47,7 +47,7 @@ def build_engines(config: Config, owner_name: str) -> Engines:
 
     from .llm import OllamaLLM
     from .stt import IndicConformerSTT, RoutingSTT, WhisperSTT
-    from .tts import IndicParlerTTS, MmsTTS, PiperTTS, RoutingTTS
+    from .tts import IndicParlerTTS, KokoroTTS, MmsTTS, PiperTTS, RoutingTTS
 
     indic = any(l in config.call.languages for l in ("hi", "kn"))
     llm = OllamaLLM(m.ollama_url, m.llm)
@@ -69,22 +69,41 @@ def build_engines(config: Config, owner_name: str) -> Engines:
     whisper.prompt = f"{owner_name}."      # helps Whisper spell the owner's name
     stt = RoutingSTT(whisper, indic_stt)
     indic_langs = [l for l in config.call.languages if l in ("hi", "kn")]
-    if not indic:
+    kokoro_voices = {}
+    if m.tts_english.startswith("kokoro:"):
+        kokoro_voices["en"] = m.tts_english.split(":", 1)[1]
+    if m.tts_hindi.startswith("kokoro:") and "hi" in indic_langs:
+        kokoro_voices["hi"] = m.tts_hindi.split(":", 1)[1]
+    kokoro = KokoroTTS(kokoro_voices, m.tts_device) if kokoro_voices else None
+    english = kokoro if "en" in kokoro_voices else PiperTTS(m.tts_english)
+    per_language = {"hi": kokoro} if "hi" in kokoro_voices else {}
+    mms_langs = [l for l in indic_langs if l not in per_language]
+    if not mms_langs:
         indic_tts = None
     elif m.tts_indic == "mms":
-        indic_tts = MmsTTS(indic_langs, m.tts_indic_device)
+        indic_tts = MmsTTS(mms_langs, m.tts_indic_device)
     else:
         indic_tts = IndicParlerTTS(m.tts_indic, m.tts_indic_device)
-    tts = RoutingTTS(PiperTTS(m.tts_english),
-                     indic_tts)
+    say_as = {owner_name: config.owner.say_as} if config.owner.say_as else {}
+    tts = RoutingTTS(english, indic_tts, per_language, say_as)
     loaded = [m.stt_english, m.llm, m.tts_english]
     if indic:
         loaded += ([m.stt_indic] if indic_stt else []) + [m.tts_indic]
     return Engines(stt=stt, llm=llm, tts=tts,
                    phrases=PhraseCache(tts, config.storage.phrase_dir, owner_name,
                                          languages=config.call.phrase_languages,
-                                         reply_languages=config.call.scripted_languages),
+                                         reply_languages=config.call.scripted_languages,
+                                         voice_tag=voice_tag(config)),
                    vad_factory=lambda: make_vad(m.vad), loaded=loaded)
+
+
+def voice_tag(config: Config) -> str:
+    """Names the phrase-cache folder after the voices, so a new voice means new audio."""
+    import hashlib
+
+    m = config.models
+    key = "|".join([m.tts_english, m.tts_hindi, m.tts_indic, config.owner.say_as])
+    return hashlib.sha1(key.encode()).hexdigest()[:8]
 
 
 def create_app(config: Config, engines: Engines | None = None) -> FastAPI:

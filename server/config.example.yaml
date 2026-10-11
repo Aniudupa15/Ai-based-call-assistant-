@@ -2,6 +2,7 @@
 owner:
   name: "Your name"
   number: "+91xxxxxxxxxx"        # main Airtel number, for SMS summaries
+  say_as: ""                     # how the voice should say your name, e.g. "Uh-nee-rood-ha"
 
 network:
   listen: "0.0.0.0"
@@ -15,7 +16,7 @@ call:
   end_of_turn_ms: 600
   barge_in_ms: 300
   silence_prompt_s: 6
-  filler_after_ms: 2500          # "one moment please" if the reply has not started by then
+  filler_after_ms: 3500          # "one moment please" if the reply has not started by then
   max_reply_sentences: 3
   languages: [en, hi, kn]
   default_language: en
@@ -33,7 +34,10 @@ models:
   stt_indic: "ai4bharat/indic-conformer-600m-multilingual"
   llm: "qwen2.5:3b-instruct"     # Ollama model name; 7b needs about 6 GB of GPU memory
   ollama_url: "http://127.0.0.1:11434"
-  tts_english: "voices/en_US-lessac-medium.onnx"   # Piper voice file
+  tts_english: "kokoro:af_heart"  # natural voice (pip install kokoro); or a Piper file such as
+                                 # "voices/en_US-lessac-medium.onnx". Try voices: tools/voice_test.py
+  tts_hindi: "kokoro:hf_alpha"   # Kokoro Hindi voice; "" uses tts_indic (MMS) for Hindi too
+  tts_device: "cpu"
   tts_indic: "mms"               # mms (fast, CPU) or ai4bharat/indic-parler-tts (GPU)
   device: "cuda"                 # Whisper on the GPU
   stt_compute_type: "auto"       # int8_float16 on the GPU, int8 on the CPU

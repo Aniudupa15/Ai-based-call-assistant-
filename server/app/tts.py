@@ -119,14 +119,67 @@ class MmsTTS:
         return resample(float_to_int16(audio), int(model.config.sampling_rate), SAMPLE_RATE)
 
 
+class KokoroTTS:
+    """Kokoro-82M (hexgrad/Kokoro-82M): natural voices, faster than real time on a CPU.
+
+    voices maps a language to a Kokoro voice; the voice's first letter is its accent:
+    a = American English (af_heart, af_bella, am_michael ...), b = British English
+    (bf_emma, bm_george ...), h = Hindi (hf_alpha, hf_beta, hm_omega, hm_psi).
+    Names it does not know are spelled out by eSpeak, which misaki bundles.
+    """
+
+    RATE = 24000
+
+    def __init__(self, voices: dict[str, str], device: str = "cpu", speed: float = 1.0):
+        from kokoro import KPipeline
+
+        self.speed = speed
+        self.pipes: dict[str, tuple] = {}
+        model = True
+        for lang, voice in voices.items():
+            code = voice[0].lower()
+            try:
+                pipe = KPipeline(lang_code=code, model=model, device=device,
+                                 repo_id="hexgrad/Kokoro-82M")
+            except TypeError:       # older kokoro without repo_id
+                pipe = KPipeline(lang_code=code, model=model, device=device)
+            model = pipe.model      # one model shared by every language
+            if code in "ab" and getattr(getattr(pipe, "g2p", None), "fallback", True) is None:
+                log.warning("Kokoro has no eSpeak fallback: names it does not know will be "
+                            "skipped. pip install --upgrade misaki[en] espeakng-loader")
+            self.pipes[lang] = (pipe, voice)
+
+    def synthesize(self, text: str, language: str = "en") -> np.ndarray:
+        pipe, voice = self.pipes.get(language) or self.pipes.get("en") or \
+            next(iter(self.pipes.values()))
+        parts = []
+        for result in pipe(text, voice=voice, speed=self.speed):
+            audio = result.audio if hasattr(result, "audio") else result[2]
+            if audio is not None:
+                parts.append(audio.detach().cpu().numpy().astype(np.float32))
+        audio = np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+        return resample(float_to_int16(audio), self.RATE, SAMPLE_RATE)
+
+
 class RoutingTTS:
-    def __init__(self, english: TextToSpeech, indic: TextToSpeech | None):
+    """Picks the engine by language. say_as rewrites words before English synthesis,
+    e.g. {"Anirudha": "Uh-nee-rood-ha"} so a name is pronounced the way it should be."""
+
+    def __init__(self, english: TextToSpeech, indic: TextToSpeech | None,
+                 per_language: dict[str, TextToSpeech] | None = None,
+                 say_as: dict[str, str] | None = None):
         self.english = english
         self.indic = indic
+        self.per_language = per_language or {}
+        self.say_as = {k: v for k, v in (say_as or {}).items() if k and v}
 
     def synthesize(self, text: str, language: str) -> np.ndarray:
+        if language in self.per_language:
+            return self.per_language[language].synthesize(text, language)
         if language != "en" and self.indic is not None:
             return self.indic.synthesize(text, language)
+        for word, spoken in self.say_as.items():
+            text = text.replace(word, spoken)
         return self.english.synthesize(text, language)
 
 
@@ -149,9 +202,11 @@ class PhraseCache:
     def __init__(self, tts: TextToSpeech, cache_dir: str | Path, owner_name: str,
                  phrases: dict[str, dict[str, str]] | None = None,
                  languages: list[str] | None = None,
-                 reply_languages: list[str] | None = None):
+                 reply_languages: list[str] | None = None,
+                 voice_tag: str = ""):
         self.tts = tts
-        self.dir = Path(cache_dir)
+        # One folder per voice set-up, so changing a voice rebuilds the phrases.
+        self.dir = Path(cache_dir) / voice_tag if voice_tag else Path(cache_dir)
         self.owner_name = owner_name
         self.phrases = phrases or load_phrases()
         # Languages fixed phrases are spoken in, in MULTI order; others fall back to the first.

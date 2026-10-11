@@ -664,6 +664,10 @@ class Session:
                     [{"role": "user", "content": build_prompt(self.owner_name, lines)}]),
                 SLOT_TIMEOUT_S)
             slots = parse_slots(raw, self.owner_name)
+            # Plain patterns catch what a small model sometimes misses ("I am Ananya").
+            simple = fallback_slots(caller, self.owner_name)
+            slots.name = slots.name or simple.name
+            slots.urgent = slots.urgent or simple.urgent
         except Exception as e:
             # Model down or far too slow: the call goes on with simple pattern matching.
             log.warning("[%s] message check failed (%s); using simple rules", self.call_id,
