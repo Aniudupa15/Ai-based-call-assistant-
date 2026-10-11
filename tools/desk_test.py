@@ -104,6 +104,10 @@ async def run(args) -> int:
     await _warm(s)
     print(f"  ready in {time.monotonic() - t0:.1f} s"
           + (f"  {s.engines.stt.timings}" if getattr(s.engines.stt, "timings", None) else ""))
+    share = getattr(s.engines.llm, "gpu_share", None)
+    if share is not None:
+        print(f"  language model on the GPU: {share:.0%}"
+              + ("" if share >= 0.95 else "  <- part of it runs on the CPU: replies will be slow"))
     s.calls.create_live(call_id, number, rule, int(time.time()))
 
     link = SpeakerLink()

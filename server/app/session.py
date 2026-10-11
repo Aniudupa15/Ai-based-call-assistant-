@@ -8,6 +8,7 @@ bot, playback stops at once (`clear_audio`) and the loop restarts on the new tur
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections import deque
@@ -36,6 +37,7 @@ MIN_CONFIDENCE = 0.25       # below this a transcript counts as not understood
 UNSURE_CONFIDENCE = 0.5     # below this, with the language unsure, ask for the language
 ECHO_TAIL_FRAMES = 20       # the bot's voice can come back 400 ms after it stops
 MISUNDERSTOOD_LIMIT = 3     # "could you repeat" twice, then "please send a text"
+LONG_SPEECH_MS = 1500       # an empty transcript of this much speech is not noise
 FINAL_STT_WAIT_S = 30.0     # after a hang-up, time allowed to transcribe the last words
 
 
@@ -278,6 +280,7 @@ class Session:
         self._current_timing: dict | None = None
         self._ended = False                   # the caller has gone
         self._hangup_due = False              # the bot said goodbye; a noise turn came in
+        self._scripted_asks = 0
         self._reply_task: asyncio.Task | None = None
         self._run_task: asyncio.Task | None = None
         self._call_ended = asyncio.Event()
@@ -552,8 +555,8 @@ class Session:
         self._reply_task = asyncio.create_task(self._respond(heard))
 
     def _record_caller(self, heard: Heard, ev: _Event) -> None:
-        self.turns.append(Turn("caller", heard.text, ev.start_ms, ev.end_ms, heard.language,
-                               heard.confidence))
+        self.turns.append(Turn("caller", heard.text or "[unclear speech]", ev.start_ms,
+                               ev.end_ms, heard.language, heard.confidence))
         if heard.kind != "words":
             return
         if self.history and self.history[-1]["role"] == "user":
@@ -581,7 +584,16 @@ class Session:
         conf = transcript.confidence
         heard = Heard(text, "words", choice.language, choice.confident, conf, t_eos, timing)
         self._current_timing = timing
-        if is_noise(text, conf):
+        # Pre-roll and the end-of-turn wait are silence; the rest was voice.
+        voiced_ms = len(ev.audio) // P.FRAME_BYTES * P.FRAME_MS \
+            - PRE_ROLL_FRAMES * P.FRAME_MS - self.config.call.end_of_turn_ms
+        if not text and voiced_ms >= LONG_SPEECH_MS:
+            # Seconds of speech and no words: most likely a language Whisper was not
+            # decoding (Kannada heard as English), not noise. Ask instead of ignoring.
+            heard.kind = "unclear"
+            heard.confidence = 0.0
+            heard.confident = False
+        elif is_noise(text, conf):
             heard.kind = "noise"
         elif is_echo(text, self._recent_bot_lines()):
             heard.kind = "echo"
@@ -620,7 +632,47 @@ class Session:
                 await self._say_phrase("repeat", self.language)
             return
         self._misunderstood = 0
-        await self._reply(heard.t_eos, heard.timing)
+        if self.language in self.config.call.scripted_languages:
+            await self._scripted_reply(heard.t_eos, heard.timing)
+        else:
+            await self._reply(heard.t_eos, heard.timing)
+
+    async def _scripted_reply(self, t_eos: float, timing: dict) -> None:
+        """Hindi and Kannada: a prepared line in the caller's language. The model only
+        says, in JSON, whether the name and the reason are known yet."""
+        caller = "\n".join(t.text for t in self.turns if t.speaker == "caller" and t.text)
+        prompt = (PROMPTS_DIR / "slots.txt").read_text(encoding="utf-8").format(
+            owner_name=self.owner_name, caller=caller)
+        t0 = time.monotonic()
+        data: dict = {}
+        try:
+            raw = await self.engines.llm.complete_json([{"role": "user", "content": prompt}])
+            data = json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+        except Exception as e:
+            log.warning("[%s] could not judge the message so far: %s", self.call_id, e)
+        timing["first_token_ms"] = int((time.monotonic() - t0) * 1000)
+
+        def known(v) -> bool:
+            return isinstance(v, str) and v.strip().lower() not in ("", "null", "none", "unknown")
+
+        name, reason = known(data.get("name")), known(data.get("reason"))
+        self._scripted_asks += 1
+        end = bool(data.get("finished")) or (name and reason) or self._scripted_asks > 3
+        key = ("goodbye" if end else "ask_reason" if name else "ask_name" if reason
+               else "ask_name_reason")
+        text = self.engines.phrases.text(key, self.language, exact=True)
+        audio = self.engines.phrases.get(key, self.language, exact=True)
+        timing["first_audio_ms"] = int((time.monotonic() - t_eos) * 1000)
+        timing["scripted"] = key
+        seg = self._enqueue(audio)
+        self.turns.append(Turn("bot", text, 0, 0, self.language, timing=timing,
+                               parts=[(text, seg)]))
+        self.history.append({"role": "assistant", "content": text})
+        log.info("[%s] bot (scripted %s, %s): %s  timing %s", self.call_id, key, data,
+                 text, timing)
+        if end:
+            await self.player.drain(held_too=True)
+        self.events.put_nowait(_Event("reply_done", end_call=bool(end)))
 
     async def _reply(self, t_eos: float, timing: dict) -> None:
         messages = [{"role": "system", "content": self._system_prompt()}, *self.history]

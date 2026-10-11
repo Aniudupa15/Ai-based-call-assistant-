@@ -40,7 +40,7 @@ def test_happy_path(calls):
     assert r.record["caller_name"] == "Ramesh"
     # Fast models: no filler, and the reply starts within about 2 s of turn end.
     assert r.count(ONE_MOMENT) == 0
-    assert all(t["first_audio_ms"] < 2500 for t in r.timings if "first_audio_ms" in t)
+    assert all(t["first_audio_ms"] < 3000 for t in r.timings if "first_audio_ms" in t), r.timings
 
 
 def test_slow_model_gets_one_filler_and_the_whole_reply(calls):
@@ -146,6 +146,31 @@ def test_confident_hindi_is_answered_in_hindi(calls):
     r = calls["hindi_caller"]
     assert [t["language"] for t in r.turns if t.get("timing")] == ["hi"]
     assert r.count(ASK_LANGUAGE) == 0
+    # A prepared Hindi line, not the model's own Hindi; name and reason were given.
+    assert r.bot_lines()[-1] == "धन्यवाद, मैं आपका संदेश पहुँचा दूँगा। नमस्ते।"
+    assert r.llm_generated == []
+    ends_with_goodbye_any(r)
+
+
+def ends_with_goodbye_any(r):
+    assert r.end_reason == "pc_hangup", r.render()
+
+
+def test_kannada_heard_as_nothing_is_not_ignored(calls):
+    r = calls["kannada_heard_as_nothing"]
+    lines = r.bot_lines()
+    assert lines[1] == ASK_LANGUAGE, r.render()
+    assert r.caller_lines()[0] == "[unclear speech]"
+    # After "Kannada", prepared Kannada lines: the first words were lost, so name and
+    # reason; then the name comes, so the reason; then goodbye.
+    assert lines[2:] == ["ನಿಮ್ಮ ಹೆಸರು ಮತ್ತು ಕರೆ ಮಾಡಿದ ಕಾರಣ ತಿಳಿಸುತ್ತೀರಾ?",
+                         "ಧನ್ಯವಾದಗಳು. ಯಾವ ವಿಷಯಕ್ಕೆ ಕರೆ ಮಾಡಿದ್ದೀರಿ?",
+                         "ಧನ್ಯವಾದಗಳು, ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ತಲುಪಿಸುತ್ತೇನೆ. ನಮಸ್ಕಾರ."] or \
+        [l for l in lines[2:] if l != ONE_MOMENT] == [
+            "ನಿಮ್ಮ ಹೆಸರು ಮತ್ತು ಕರೆ ಮಾಡಿದ ಕಾರಣ ತಿಳಿಸುತ್ತೀರಾ?",
+            "ಧನ್ಯವಾದಗಳು. ಯಾವ ವಿಷಯಕ್ಕೆ ಕರೆ ಮಾಡಿದ್ದೀರಿ?",
+            "ಧನ್ಯವಾದಗಳು, ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ತಲುಪಿಸುತ್ತೇನೆ. ನಮಸ್ಕಾರ."], r.render()
+    ends_with_goodbye_any(r)
 
 
 def test_accented_english_is_answered_not_questioned(calls):

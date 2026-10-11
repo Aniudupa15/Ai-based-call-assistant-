@@ -49,6 +49,24 @@ ask_language:
   kn: "ಕನ್ನಡ, ಹಿಂದಿ ಅಥವಾ ಇಂಗ್ಲಿಷ್?"
   hi: "कन्नड़, हिंदी या इंग्लिश?"
 
+# Replies for callers speaking a language in call.scripted_languages (Hindi and
+# Kannada by default): a small model writes those languages badly, so the bot says
+# these instead. Always in the caller's language, whatever phrase_languages says.
+ask_name_reason:
+  en: "May I know your name and why you are calling?"
+  hi: "क्या मैं आपका नाम और कॉल करने की वजह जान सकता हूँ?"
+  kn: "ನಿಮ್ಮ ಹೆಸರು ಮತ್ತು ಕರೆ ಮಾಡಿದ ಕಾರಣ ತಿಳಿಸುತ್ತೀರಾ?"
+
+ask_name:
+  en: "Thank you. May I know your name?"
+  hi: "धन्यवाद। क्या मैं आपका नाम जान सकता हूँ?"
+  kn: "ಧನ್ಯವಾದಗಳು. ನಿಮ್ಮ ಹೆಸರು ತಿಳಿಸುತ್ತೀರಾ?"
+
+ask_reason:
+  en: "Thank you. What is the call about?"
+  hi: "धन्यवाद। आप किस बारे में कॉल कर रहे हैं?"
+  kn: "ಧನ್ಯವಾದಗಳು. ಯಾವ ವಿಷಯಕ್ಕೆ ಕರೆ ಮಾಡಿದ್ದೀರಿ?"
+
 # Copied to the microSD card for voicemail mode, played as en + kn + hi.
 voicemail_greeting:
   en: "This is an automated assistant. Please leave your name and message after the beep."

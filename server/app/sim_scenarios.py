@@ -125,6 +125,18 @@ SCENARIOS: list[Scenario] = [
         Say("ಪಾರ್ಸೆಲ್ ಬಗ್ಗೆ ಕರೆ ಮಾಡಿದ್ದೇನೆ.", "kn", detected={"kn": 0.55, "si": 0.4}),
         WaitBot(),
     ]),
+    Scenario("kannada_heard_as_nothing", "4 s of Kannada decoded as English gives no words", [
+        WaitBot(),
+        Say("ನಾನು ರಮೇಶ್, ನನಗೆ ಪಾರ್ಸೆಲ್ ಬಗ್ಗೆ ಸ್ವಲ್ಪ ಮಾತಾಡ್ಲಿಕ್ಕಿತ್ತು.", "kn", ms=4000,
+            detected={"en": 0.3, "kn": 0.25, "ta": 0.2}, garbled=""),
+        WaitBot(),
+        Say("Kannada.", detected={"en": 0.5, "kn": 0.4}),
+        WaitBot(),
+        Say("ನಾನು ರಮೇಶ್.", "kn", detected={"kn": 0.8}),
+        WaitBot(),
+        Say("ಪಾರ್ಸೆಲ್ ಬಗ್ಗೆ.", "kn", detected={"kn": 0.8}),
+        WaitBot(),
+    ]),
     Scenario("hindi_caller", "Hindi detected confidently: replies in Hindi", [
         WaitBot(),
         Say("नमस्ते, मैं रमेश बोल रहा हूँ, पार्सल के बारे में।", "hi",

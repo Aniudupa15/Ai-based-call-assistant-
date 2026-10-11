@@ -21,6 +21,8 @@ call:
   default_language: en
   phrase_languages: [en]         # fixed lines (greeting, goodbye, voicemail) in English only;
                                  # add hi, kn to speak them in all three. Replies still follow the caller.
+  scripted_languages: [hi, kn]   # Hindi/Kannada callers hear prepared replies in their language
+                                 # (a 3b model writes them badly); [] lets the model reply freely.
 
 models:
   backend: local                 # local | fake (fake needs no GPU; for development and tests)

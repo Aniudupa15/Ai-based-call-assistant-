@@ -33,6 +33,10 @@ class CallConfig(BaseModel):
     # Languages of the fixed recorded lines (greeting, "could you repeat", goodbye, the
     # voicemail greeting). The conversation itself still follows the caller's language.
     phrase_languages: list[str] = Field(default_factory=lambda: ["en"])
+    # Callers in these languages hear fixed replies in their language (ask for the
+    # name, the reason, then goodbye); the language model only judges what is still
+    # missing. Small models write Hindi and Kannada poorly. [] lets the model reply.
+    scripted_languages: list[str] = Field(default_factory=lambda: ["hi", "kn"])
 
 
 class ModelsConfig(BaseModel):

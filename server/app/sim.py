@@ -73,6 +73,7 @@ class Utterance:
     confidence: float = 0.8
     detected: dict | None = None       # what language detection reports; default certain
     freq: float = 0.0
+    garbled: str | None = None         # what decoding in the wrong language gives
 
 
 class SimSTT:
@@ -119,9 +120,13 @@ class SimSTT:
             self.calls.append((f"transcribe-{language}", delay))
         utts, echo = self._find(audio16k)
         if utts:
+            wrong = [u for u in utts if u.language != language]
+            if wrong and all(u.garbled is not None for u in wrong):
+                text = " ".join(u.garbled for u in wrong).strip()
+                return Transcript(text, language, 0.2 if text else None)
             text = " ".join(u.text for u in utts)
             conf = min(u.confidence for u in utts)
-            if any(u.language != language for u in utts):
+            if wrong:
                 conf = min(conf, 0.2)        # wrong-language decoding is mostly garbage
             return Transcript(text, language, conf)
         if echo:
@@ -166,6 +171,10 @@ class SimLLM(FakeLLM):
         if self.policy:
             return self.policy(messages)
         return default_policy(messages)
+
+    async def complete_json(self, messages: list[dict]) -> str:
+        await asyncio.sleep(self.first_token_s + 0.3)      # prompt, then ~10 JSON tokens
+        return await super().complete_json(messages)
 
     async def stream_chat(self, messages: list[dict]) -> AsyncIterator[str]:
         self.prompts.append([dict(m) for m in messages])
@@ -241,6 +250,7 @@ class Say:
     confidence: float = 0.8
     detected: dict | None = None
     gaps_ms: tuple = ()                # pauses inside the sentence, (at_ms, length_ms)
+    garbled: str | None = None         # transcript if decoded in the wrong language
 
 
 @dataclass
@@ -371,7 +381,8 @@ async def run_scenario(sc: Scenario, keep_dir: str | None = None) -> SimResult:
     def utter(say: Say) -> None:
         f = freq_next[0]
         freq_next[0] += FREQ_STEP
-        stt.utterances[f] = Utterance(say.text, say.language, say.confidence, say.detected, f)
+        stt.utterances[f] = Utterance(say.text, say.language, say.confidence, say.detected, f,
+                                      say.garbled)
         ms = say.ms or int(max(600, min(6000, len(say.text) * 1000 / 15)))
         n_frames = ms // 20
         gaps = {}

@@ -135,6 +135,10 @@ def load_phrases(path: Path | None = None) -> dict[str, dict[str, str]]:
         return yaml.safe_load(f)
 
 
+# Spoken in the caller's own language when replies are scripted (call.scripted_languages).
+SCRIPTED_KEYS = ("ask_name_reason", "ask_name", "ask_reason", "goodbye")
+
+
 class PhraseCache:
     """Fixed phrases per language, stored as 8 kHz WAV.
 
@@ -144,13 +148,16 @@ class PhraseCache:
 
     def __init__(self, tts: TextToSpeech, cache_dir: str | Path, owner_name: str,
                  phrases: dict[str, dict[str, str]] | None = None,
-                 languages: list[str] | None = None):
+                 languages: list[str] | None = None,
+                 reply_languages: list[str] | None = None):
         self.tts = tts
         self.dir = Path(cache_dir)
         self.owner_name = owner_name
         self.phrases = phrases or load_phrases()
         # Languages fixed phrases are spoken in, in MULTI order; others fall back to the first.
         self.languages = [l for l in MULTI_ORDER if l in (languages or MULTI_ORDER)] or ["en"]
+        # Languages the scripted replies are built in (see SCRIPTED_KEYS).
+        self.reply_languages = list(reply_languages or [])
         self._mem: dict[tuple[str, str], np.ndarray] = {}
 
     def set_owner(self, name: str) -> None:
@@ -159,22 +166,25 @@ class PhraseCache:
             self.owner_name = name
             self._mem.clear()
 
-    def _lang(self, language: str) -> str:
+    def _lang(self, language: str, key: str = "", exact: bool = False) -> str:
+        if exact and key in self.phrases and language in self.phrases[key]:
+            return language
         return language if language in self.languages or language == MULTI else self.languages[0]
 
-    def text(self, key: str, language: str) -> str:
-        language = self._lang(language)
+    def text(self, key: str, language: str, exact: bool = False) -> str:
+        """exact: in this language if the phrase has it, whatever phrase_languages say."""
+        language = self._lang(language, key, exact)
         if language == MULTI:
             return " ".join(self.text(key, l) for l in self.languages if l in self.phrases[key])
         entry = self.phrases[key]
         return entry.get(language, entry["en"]).format(owner_name=self.owner_name)
 
     def _path(self, key: str, language: str) -> Path:
-        digest = hashlib.sha1(self.text(key, language).encode()).hexdigest()[:10]
+        digest = hashlib.sha1(self.text(key, language, exact=True).encode()).hexdigest()[:10]
         return self.dir / language / f"{key}-{digest}.wav"
 
-    def get(self, key: str, language: str) -> np.ndarray:
-        language = self._lang(language)
+    def get(self, key: str, language: str, exact: bool = False) -> np.ndarray:
+        language = self._lang(language, key, exact)
         if language == MULTI:
             gap = np.zeros(int(0.3 * SAMPLE_RATE), dtype="<i2")
             parts = []
@@ -190,7 +200,7 @@ class PhraseCache:
             audio, rate = read_wav(path)
             audio = resample(audio, rate, SAMPLE_RATE)
         else:
-            audio = self.tts.synthesize(self.text(key, language), language)
+            audio = self.tts.synthesize(self.text(key, language, exact=True), language)
             write_wav(path, audio)
         self._mem[mem_key] = audio
         return audio
@@ -200,4 +210,8 @@ class PhraseCache:
             for language in languages:
                 if language in entry and language in self.languages:
                     self.get(key, language)
+        for key in SCRIPTED_KEYS:
+            for language in self.reply_languages:
+                if language in self.phrases.get(key, {}):
+                    self.get(key, language, exact=True)
         log.info("phrase cache ready in %s", self.dir)

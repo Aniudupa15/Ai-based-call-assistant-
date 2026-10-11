@@ -42,7 +42,14 @@ class SileroVad:
         from silero_vad import load_silero_vad
 
         self._torch = __import__("torch")
-        self.model = load_silero_vad()
+        # The ONNX build runs on one thread. The TorchScript build uses every core
+        # for each 16 ms window, 60 times a second, and starves speech recognition
+        # and synthesis running at the same time (seen: 17 s instead of 1 s).
+        try:
+            self.model = load_silero_vad(onnx=True)
+        except Exception:
+            torch.set_num_threads(max(1, torch.get_num_threads() // 2))
+            self.model = load_silero_vad()
         self.threshold = threshold
         # The phone network can echo the bot's own voice back, so the bar is
         # higher while the bot talks. Tune on real calls.
