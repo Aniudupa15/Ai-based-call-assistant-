@@ -35,11 +35,12 @@ log = logging.getLogger(__name__)
 PRE_ROLL_FRAMES = 15        # 300 ms kept before speech start so words are not clipped
 HANGUP_WAIT_S = 5.0         # how long to wait for call_end after sending hangup
 MIN_CONFIDENCE = 0.25       # below this a transcript counts as not understood
-UNSURE_CONFIDENCE = 0.5     # below this, with the language unsure, ask for the language
+UNSURE_CONFIDENCE = 0.3     # below this, with the language unsure, ask for the language
 ECHO_TURNS_NO_BARGE_IN = 2  # after this many echo turns, the caller cannot interrupt
 ECHO_TAIL_FRAMES = 20       # the bot's voice can come back 400 ms after it stops
 MISUNDERSTOOD_LIMIT = 3     # "could you repeat" twice, then "please send a text"
 SLOT_TIMEOUT_S = 8.0        # longer than this for the message check: simple rules instead
+MIN_FILLER_MS = 3000        # a filler sooner than this lands just before a normal reply
 LONG_SPEECH_MS = 1500       # an empty transcript of this much speech is not noise
 FINAL_STT_WAIT_S = 30.0     # after a hang-up, time allowed to transcribe the last words
 
@@ -78,10 +79,15 @@ class Turn:
     confidence: Optional[float] = None
     timing: Optional[dict] = None
     parts: list[tuple[str, Segment]] = field(default_factory=list)  # bot sentences
+    language_answer: bool = False     # "Kannada" said in answer to the language question
 
     def heard(self) -> str:
         """The bot's words that started playing; a barge-in cuts off the rest."""
         return " ".join(text for text, seg in self.parts if seg.sent > 0)
+
+
+class _Restart(Exception):
+    """The caller only told us their language: ask for the message again."""
 
 
 @dataclass
@@ -273,6 +279,7 @@ class Session:
         self._silences = 0
         self._misunderstood = 0
         self._asked_language = False
+        self._awaiting_language = False       # just asked "Kannada, Hindi or English?"
         self._language_locked = self.hint is not None
         self._caller_turns = 0
         self._pending_turns = 0
@@ -545,7 +552,8 @@ class Session:
         self._filler_task = None
 
     async def _filler_after(self, t_eos: float) -> None:
-        delay = self.config.call.filler_after_ms / 1000 - (time.monotonic() - t_eos)
+        delay = max(self.config.call.filler_after_ms, MIN_FILLER_MS) / 1000 \
+            - (time.monotonic() - t_eos)
         await asyncio.sleep(max(0.0, delay))
         if (self._ended or self._hangup_due or self._collecting or self.player.speaking
                 or self._last_bot_audio_at > t_eos):
@@ -569,7 +577,8 @@ class Session:
 
     def _record_caller(self, heard: Heard, ev: _Event) -> None:
         self.turns.append(Turn("caller", heard.text or "[unclear speech]", ev.start_ms,
-                               ev.end_ms, heard.language, heard.confidence))
+                               ev.end_ms, heard.language, heard.confidence,
+                               language_answer=bool(heard.chosen_language)))
         if heard.kind != "words":
             return
         if self.history and self.history[-1]["role"] == "user":
@@ -616,7 +625,10 @@ class Session:
             return heard
 
         self._caller_turns += 1
-        asked = language_request(text) if (self._asked_language or len(text) < 40) else None
+        after_question = self._awaiting_language
+        self._awaiting_language = False
+        asked = language_request(text, after_question) \
+            if (after_question or len(text) < 40) else None
         if asked and asked in self.allowed:
             heard.chosen_language = asked
             heard.kind = "words"
@@ -634,7 +646,14 @@ class Session:
         if unsure and not self._asked_language and not self.hint:
             # Garbled words in a language we are not sure of: probably the wrong one.
             self._asked_language = True
+            self._awaiting_language = True
             await self._say_phrase(ASK_LANGUAGE_PHRASE, MULTI)
+            return
+        if heard.chosen_language:
+            # "Kannada" in answer to the question: ask again, now in that language. The
+            # answer itself is not part of the message.
+            self._misunderstood = 0
+            await self._scripted_reply(heard.t_eos, heard.timing, restart=True)
             return
         if heard.kind == "unclear":
             self._misunderstood += 1
@@ -651,14 +670,19 @@ class Session:
         else:
             await self._reply(heard.t_eos, heard.timing)
 
-    async def _scripted_reply(self, t_eos: float, timing: dict) -> None:
+    async def _scripted_reply(self, t_eos: float, timing: dict, restart: bool = False) -> None:
         """The model reads the call and reports what it heard; the reply is chosen by
         rules (app/message.py), so it is always on topic and never invented."""
-        lines = [(t.speaker, t.text) for t in self.turns if t.text]
-        caller = [t.text for t in self.turns
-                  if t.speaker == "caller" and t.text and t.text != "[unclear speech]"]
+        ask_text = self.engines.phrases.text(ASK_LANGUAGE_PHRASE, MULTI)
+        # The language question and its answer are not part of the message.
+        kept = [t for t in self.turns if t.text and not t.language_answer
+                and t.text != ask_text]
+        lines = [(t.speaker, t.text) for t in kept]
+        caller = [t.text for t in kept if t.speaker == "caller" and t.text != "[unclear speech]"]
         t0 = time.monotonic()
         try:
+            if restart:
+                raise _Restart
             raw = await asyncio.wait_for(
                 self.engines.llm.complete_json(
                     [{"role": "user", "content": build_prompt(self.owner_name, lines)}]),
@@ -668,6 +692,8 @@ class Session:
             simple = fallback_slots(caller, self.owner_name)
             slots.name = slots.name or simple.name
             slots.urgent = slots.urgent or simple.urgent
+        except _Restart:
+            slots = fallback_slots(caller, self.owner_name)
         except Exception as e:
             # Model down or far too slow: the call goes on with simple pattern matching.
             log.warning("[%s] message check failed (%s); using simple rules", self.call_id,

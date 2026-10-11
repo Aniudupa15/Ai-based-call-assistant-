@@ -32,9 +32,9 @@ sys.path.insert(0, str(SERVER))
 
 from app.audio import write_wav  # noqa: E402
 from app.config import load_config  # noqa: E402
-from app.message import all_english_lines  # noqa: E402
 from app.protocol import SAMPLE_RATE  # noqa: E402
-from app.tts import SCRIPTED_KEYS, IndicParlerTTS, line_path, load_phrases  # noqa: E402
+from app.tts import IndicParlerTTS, line_path  # noqa: E402
+from app.voice_lines import lines_to_record  # noqa: E402
 
 CANDIDATES = {
     "en": ["Thoma", "Mary", "Swapna", "Dinesh", "Meera", "Jatin"],
@@ -54,30 +54,6 @@ def owner_name(config) -> str:
     from app.settings import Settings
 
     return Settings(config, Database(config.storage.database)).owner_name
-
-
-def lines_to_record(config, owner: str) -> list[tuple[str, str]]:
-    """(language, text) for everything the bot can say, exactly as the server says it."""
-    phrases = load_phrases()
-    langs = [l for l in ("en", "kn", "hi") if l in config.call.languages]
-    fixed = [l for l in config.call.phrase_languages if l in langs] or ["en"]
-    scripted = [l for l in config.call.scripted_languages if l in langs]
-    out: list[tuple[str, str]] = []
-
-    def add(lang: str, text: str) -> None:
-        if (lang, text) not in out:
-            out.append((lang, text))
-
-    for key, entry in phrases.items():
-        for lang in fixed:
-            add(lang, entry.get(lang, entry["en"]).format(owner_name=owner))
-        if key in SCRIPTED_KEYS:
-            for lang in scripted:
-                if lang in entry:
-                    add(lang, entry[lang].format(owner_name=owner))
-    for text in all_english_lines(owner):
-        add("en", text)
-    return out
 
 
 def play(audio) -> None:

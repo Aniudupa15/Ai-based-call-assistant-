@@ -67,7 +67,6 @@ def build_engines(config: Config, owner_name: str) -> Engines:
                         "Kannada instead. See docs/HOME_SETUP.md to enable it.",
                         str(e).splitlines()[0][:200])
     whisper = WhisperSTT(m.stt_english, m.device, m.stt_compute_type)
-    whisper.prompt = f"{owner_name}."      # helps Whisper spell the owner's name
     stt = RoutingSTT(whisper, indic_stt)
     indic_langs = [l for l in config.call.languages if l in ("hi", "kn")]
     kokoro_voices = {}
@@ -90,8 +89,9 @@ def build_engines(config: Config, owner_name: str) -> Engines:
     if recorded_lines(config):
         # Lines recorded by tools/make_voice.py play first; others use the live voice.
         tts = PrerecordedTTS(config.storage.voice_dir, tts)
-        log.info("using %d recorded voice lines from %s", recorded_lines(config),
-                 config.storage.voice_dir)
+        from .voice_lines import check_recorded
+
+        check_recorded(config, owner_name)
     sarvam = sarvam_tts(config)
     if sarvam is not None:
         # Sarvam speaks the languages it is set for; the local voices stay as backup.

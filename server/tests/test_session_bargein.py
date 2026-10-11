@@ -78,8 +78,11 @@ def test_barge_in_clears_audio(config, tmp_path):
     assert link.audio > 100   # paced frames, silence included
 
 
-def test_slow_model_reply_is_not_cut_off(config, tmp_path):
+def test_slow_model_reply_is_not_cut_off(config, tmp_path, monkeypatch):
     """The 'one moment' filler must not cancel a reply that is still being written."""
+    import app.session
+
+    monkeypatch.setattr(app.session, "MIN_FILLER_MS", 0)
     config.call.reply_mode = "llm"
     config.call.filler_after_ms = 10    # before the first chunk (30 ms) arrives
     tts = FakeTTS()

@@ -223,3 +223,19 @@ def test_question_is_answered_politely(calls):
     assert replies(r)[0].startswith("I'm sorry, I don't have that information")
     assert replies(r)[0].endswith("Thank you, Ramesh. What is the call regarding?")
     ends_with_goodbye(r)
+
+
+def test_unsure_english_is_not_asked_its_language(calls):
+    r = calls["accented_english_low_conf"]
+    assert r.count(ASK_LANGUAGE) == 0, r.render()
+    ends_with_goodbye(r)
+
+
+def test_language_answer_is_not_taken_as_a_name(calls):
+    r = calls["language_answer_canada"]
+    lines = r.bot_lines()
+    assert lines[1] == ASK_LANGUAGE, r.render()
+    # "Canada" means Kannada: the bot asks again, in Kannada, and never treats it as a name.
+    assert lines[2] == "ನಿಮ್ಮ ಹೆಸರು ಮತ್ತು ಕರೆ ಮಾಡಿದ ಕಾರಣ ತಿಳಿಸುತ್ತೀರಾ?", r.render()
+    assert not any("Canada" in p for p in r.json_calls if p.startswith("You read"))
+    assert r.bot_lines()[-1] == "ಧನ್ಯವಾದಗಳು, ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ತಲುಪಿಸುತ್ತೇನೆ. ನಮಸ್ಕಾರ."
