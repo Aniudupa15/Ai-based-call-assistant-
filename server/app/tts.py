@@ -143,11 +143,14 @@ class PhraseCache:
     """
 
     def __init__(self, tts: TextToSpeech, cache_dir: str | Path, owner_name: str,
-                 phrases: dict[str, dict[str, str]] | None = None):
+                 phrases: dict[str, dict[str, str]] | None = None,
+                 languages: list[str] | None = None):
         self.tts = tts
         self.dir = Path(cache_dir)
         self.owner_name = owner_name
         self.phrases = phrases or load_phrases()
+        # Languages fixed phrases are spoken in, in MULTI order; others fall back to the first.
+        self.languages = [l for l in MULTI_ORDER if l in (languages or MULTI_ORDER)] or ["en"]
         self._mem: dict[tuple[str, str], np.ndarray] = {}
 
     def set_owner(self, name: str) -> None:
@@ -156,9 +159,13 @@ class PhraseCache:
             self.owner_name = name
             self._mem.clear()
 
+    def _lang(self, language: str) -> str:
+        return language if language in self.languages or language == MULTI else self.languages[0]
+
     def text(self, key: str, language: str) -> str:
+        language = self._lang(language)
         if language == MULTI:
-            return " ".join(self.text(key, l) for l in MULTI_ORDER if l in self.phrases[key])
+            return " ".join(self.text(key, l) for l in self.languages if l in self.phrases[key])
         entry = self.phrases[key]
         return entry.get(language, entry["en"]).format(owner_name=self.owner_name)
 
@@ -167,10 +174,11 @@ class PhraseCache:
         return self.dir / language / f"{key}-{digest}.wav"
 
     def get(self, key: str, language: str) -> np.ndarray:
+        language = self._lang(language)
         if language == MULTI:
             gap = np.zeros(int(0.3 * SAMPLE_RATE), dtype="<i2")
             parts = []
-            for l in MULTI_ORDER:
+            for l in self.languages:
                 if l in self.phrases[key]:
                     parts += [self.get(key, l), gap]
             return np.concatenate(parts[:-1]) if parts else np.zeros(0, dtype="<i2")
@@ -190,6 +198,6 @@ class PhraseCache:
     def build(self, languages: list[str]) -> None:
         for key, entry in self.phrases.items():
             for language in languages:
-                if language in entry:
+                if language in entry and language in self.languages:
                     self.get(key, language)
         log.info("phrase cache ready in %s", self.dir)

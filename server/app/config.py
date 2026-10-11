@@ -30,6 +30,9 @@ class CallConfig(BaseModel):
     max_reply_sentences: int = 2
     languages: list[str] = Field(default_factory=lambda: ["en", "hi", "kn"])
     default_language: str = "en"
+    # Languages of the fixed recorded lines (greeting, "could you repeat", goodbye, the
+    # voicemail greeting). The conversation itself still follows the caller's language.
+    phrase_languages: list[str] = Field(default_factory=lambda: ["en"])
 
 
 class ModelsConfig(BaseModel):

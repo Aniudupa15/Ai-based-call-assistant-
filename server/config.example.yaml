@@ -19,6 +19,8 @@ call:
   max_reply_sentences: 2
   languages: [en, hi, kn]
   default_language: en
+  phrase_languages: [en]         # fixed lines (greeting, goodbye, voicemail) in English only;
+                                 # add hi, kn to speak them in all three. Replies still follow the caller.
 
 models:
   backend: local                 # local | fake (fake needs no GPU; for development and tests)

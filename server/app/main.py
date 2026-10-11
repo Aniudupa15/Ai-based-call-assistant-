@@ -40,7 +40,8 @@ def build_engines(config: Config, owner_name: str) -> Engines:
 
         tts = FakeTTS()
         return Engines(stt=FakeSTT(), llm=FakeLLM(), tts=tts,
-                       phrases=PhraseCache(tts, config.storage.phrase_dir, owner_name),
+                       phrases=PhraseCache(tts, config.storage.phrase_dir, owner_name,
+                                         languages=config.call.phrase_languages),
                        vad_factory=EnergyVad, loaded=["fake"])
 
     from .llm import OllamaLLM
@@ -72,7 +73,8 @@ def build_engines(config: Config, owner_name: str) -> Engines:
     if indic:
         loaded += ([m.stt_indic] if indic_stt else []) + [m.tts_indic]
     return Engines(stt=stt, llm=OllamaLLM(m.ollama_url, m.llm), tts=tts,
-                   phrases=PhraseCache(tts, config.storage.phrase_dir, owner_name),
+                   phrases=PhraseCache(tts, config.storage.phrase_dir, owner_name,
+                                         languages=config.call.phrase_languages),
                    vad_factory=lambda: make_vad(m.vad), loaded=loaded)
 
 
