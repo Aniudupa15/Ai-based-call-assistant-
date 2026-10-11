@@ -78,6 +78,12 @@ def parse_result(text: str) -> PostCallResult:
 
 async def summarise(llm: LanguageModel, turns: list[dict], owner_name: str,
                     caller_context: str) -> PostCallResult:
+    if not any(t["speaker"] == "caller" and (t.get("text") or "").strip() for t in turns):
+        # Nothing to summarise; asking the model anyway invites a made-up reason.
+        return PostCallResult(summary="The caller did not say anything.",
+                              reason="No message: the caller was silent or not heard.",
+                              severity="low", severity_why="Nothing was said",
+                              action_needed="none", language="en")
     template = (PROMPTS_DIR / "postcall.txt").read_text(encoding="utf-8")
     prompt = template.format(owner_name=owner_name, caller_context=caller_context,
                              transcript=format_transcript(turns))
