@@ -122,9 +122,10 @@ class MmsTTS:
 class KokoroTTS:
     """Kokoro-82M (hexgrad/Kokoro-82M): natural voices, faster than real time on a CPU.
 
-    voices maps a language to a Kokoro voice; the voice's first letter is its accent:
-    a = American English (af_heart, af_bella, am_michael ...), b = British English
-    (bf_emma, bm_george ...), h = Hindi (hf_alpha, hf_beta, hm_omega, hm_psi).
+    voices maps a language to a Kokoro voice: American (af_heart, af_bella, am_michael
+    ...), British (bf_emma, bm_george ...) or Hindi speakers (hf_alpha, hf_beta,
+    hm_omega, hm_psi). English text always goes through English pronunciation rules,
+    so a Hindi speaker's voice on English gives Indian-accented English.
     Names it does not know are spelled out by eSpeak, which misaki bundles.
     """
 
@@ -137,7 +138,8 @@ class KokoroTTS:
         self.pipes: dict[str, tuple] = {}
         model = True
         for lang, voice in voices.items():
-            code = voice[0].lower()
+            # Pronunciation rules follow the language of the text, not the speaker.
+            code = "h" if lang == "hi" else ("b" if voice.startswith("b") else "a")
             try:
                 pipe = KPipeline(lang_code=code, model=model, device=device,
                                  repo_id="hexgrad/Kokoro-82M")

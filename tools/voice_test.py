@@ -22,8 +22,9 @@ from app.audio import write_wav  # noqa: E402
 from app.config import load_config  # noqa: E402
 from app.protocol import SAMPLE_RATE  # noqa: E402
 
-DEFAULT_VOICES = ["kokoro:af_heart", "kokoro:af_bella", "kokoro:bf_emma", "kokoro:am_michael",
-                  "kokoro:bm_george", "piper", "kokoro:hf_alpha", "kokoro:hm_omega"]
+# Indian-accented English first (Kokoro's Hindi speakers reading English), then others.
+DEFAULT_VOICES = ["kokoro:hf_alpha", "kokoro:hf_beta", "kokoro:hm_omega", "kokoro:hm_psi",
+                  "kokoro:af_heart", "kokoro:bf_emma", "piper"]
 LINE_EN = ("Hello, this is {owner}'s assistant. {owner} can't take your call right now. "
            "Thank you, Ananya. I'll make sure {owner} gets your message. Goodbye.")
 LINE_HI = "नमस्ते, मैं {owner} का सहायक हूँ। धन्यवाद, मैं आपका संदेश पहुँचा दूँगा।"
@@ -38,6 +39,7 @@ def main() -> int:
                    help="comma-separated: kokoro:<voice> or piper")
     p.add_argument("--say-as", default=None, help="respelling for your name, to try it out")
     p.add_argument("--no-play", action="store_true", help="only save the files")
+    p.add_argument("--hindi", action="store_true", help="a Hindi line instead of English")
     args = p.parse_args()
 
     config = load_config(args.config)
@@ -54,7 +56,7 @@ def main() -> int:
 
     kokoro_model = None
     for name in [v.strip() for v in args.voices.split(",") if v.strip()]:
-        hindi = name.startswith("kokoro:h")
+        hindi = args.hindi
         text = (LINE_HI if hindi else LINE_EN).format(owner=owner if hindi else spoken)
         try:
             if name == "piper":
@@ -71,14 +73,15 @@ def main() -> int:
         except Exception as e:
             print(f"{name:20s} could not load: {e}")
             continue
-        path = out / f"{name.replace(':', '_')}.wav"
+        path = out / f"{name.replace(':', '_')}{'_hi' if hindi else ''}.wav"
         write_wav(path, audio)
         print(f"{name:20s} {len(audio) / SAMPLE_RATE:4.1f} s  -> {path}")
         if sd is not None and not args.no_play:
             sd.play(audio, SAMPLE_RATE)
             sd.wait()
     print("\nSet your choice in config.yaml, for example:\n"
-          '  models:\n    tts_english: "kokoro:af_heart"\n    tts_hindi: "kokoro:hf_alpha"\n'
+          '  models:\n    tts_english: "kokoro:hf_alpha"   # Indian-accented English\n'
+          '    tts_hindi: "kokoro:hf_alpha"\n'
           '  owner:\n    say_as: "Uh-nee-rood-ha"     # only if your name sounds wrong')
     return 0
 
