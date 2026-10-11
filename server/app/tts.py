@@ -49,31 +49,37 @@ class PiperTTS:
 
 
 class IndicParlerTTS:
-    # Speakers the model card recommends for each language.
-    DESCRIPTIONS = {
-        "hi": "Divya speaks at a moderate pace with a clear, friendly tone. "
-              "The recording is very close-sounding with no background noise.",
-        "kn": "Suresh speaks at a moderate pace with a clear, friendly tone. "
-              "The recording is very close-sounding with no background noise.",
-    }
+    """ai4bharat/indic-parler-tts: free, natural Indian voices (Indian English, Hindi,
+    Kannada ...). Too heavy to run beside the language model on a 4 GB GPU, so
+    tools/make_voice.py uses it to record the bot's lines ahead of time."""
 
-    def __init__(self, model_name: str, device: str = "cuda"):
+    # Speakers the model card recommends for each language.
+    SPEAKERS = {"en": "Thoma", "hi": "Divya", "kn": "Anu"}
+    STYLE = ("{speaker} speaks at a moderate pace with a clear, warm and professional tone. "
+             "The recording is very high quality, close-sounding, with no background noise.")
+
+    def __init__(self, model_name: str = "ai4bharat/indic-parler-tts", device: str = "cuda",
+                 speakers: dict[str, str] | None = None):
         import torch
         from parler_tts import ParlerTTSForConditionalGeneration
         from transformers import AutoTokenizer
 
         self._torch = torch
         self.device = device
+        self.speakers = {**self.SPEAKERS, **(speakers or {})}
         self.model = ParlerTTSForConditionalGeneration.from_pretrained(model_name).to(device)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.desc_tokenizer = AutoTokenizer.from_pretrained(
             self.model.config.text_encoder._name_or_path)
         self.rate = int(self.model.config.sampling_rate)
 
-    def synthesize(self, text: str, language: str) -> np.ndarray:
-        desc = self.desc_tokenizer(self.DESCRIPTIONS.get(language, self.DESCRIPTIONS["hi"]),
+    def synthesize(self, text: str, language: str, speaker: str | None = None,
+                   seed: int = 0) -> np.ndarray:
+        name = speaker or self.speakers.get(language, self.speakers["en"])
+        desc = self.desc_tokenizer(self.STYLE.format(speaker=name),
                                    return_tensors="pt").to(self.device)
         prompt = self.tokenizer(text, return_tensors="pt").to(self.device)
+        self._torch.manual_seed(seed)        # the same line comes out the same way
         with self._torch.no_grad():
             out = self.model.generate(
                 input_ids=desc.input_ids, attention_mask=desc.attention_mask,
@@ -214,6 +220,33 @@ class SarvamTTS:
         if len(self._memo) < 200:
             self._memo[key] = audio
         return audio
+
+
+def line_path(folder: str | Path, text: str, language: str) -> Path:
+    """Where a pre-recorded line lives: one file per language and exact text."""
+    digest = hashlib.sha1(" ".join(text.split()).encode()).hexdigest()[:16]
+    return Path(folder) / language / f"{digest}.wav"
+
+
+class PrerecordedTTS:
+    """Plays lines recorded ahead of time by tools/make_voice.py with a heavy, natural
+    voice (Indic Parler-TTS); anything not recorded is spoken by the live voice."""
+
+    def __init__(self, folder: str | Path, fallback: TextToSpeech):
+        self.folder = Path(folder)
+        self.fallback = fallback
+        self.hits = 0
+        self.misses = 0
+
+    def synthesize(self, text: str, language: str) -> np.ndarray:
+        path = line_path(self.folder, text, language)
+        if path.exists():
+            self.hits += 1
+            audio, rate = read_wav(path)
+            return resample(audio, rate, SAMPLE_RATE)
+        self.misses += 1
+        log.info("no recorded line for %r (%s); live voice used", text[:60], language)
+        return self.fallback.synthesize(text, language)
 
 
 class FallbackTTS:

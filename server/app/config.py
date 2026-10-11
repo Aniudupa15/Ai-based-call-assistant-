@@ -43,6 +43,9 @@ class CallConfig(BaseModel):
     # scripted: the model only reads the call; the bot says fixed, professional lines
     # (app/message.py). llm: the model writes every reply (needs a strong model).
     reply_mode: Literal["scripted", "llm"] = "scripted"
+    # "Thank you, Ananya." in English replies. Off, every line is fixed and can be
+    # recorded ahead of time in a better voice (tools/make_voice.py).
+    use_caller_name: bool = True
 
 
 class ModelsConfig(BaseModel):
@@ -79,6 +82,7 @@ class StorageConfig(BaseModel):
     database: str = "data/calls.db"
     audio_dir: str = "data/audio"
     phrase_dir: str = "data/phrases"
+    voice_dir: str = "data/voice_lines"  # lines recorded by tools/make_voice.py
     model_dir: str = "data/models"      # models that must sit in a plain folder (IndicConformer)
     retention_days: int = 30
 

@@ -110,3 +110,65 @@ def test_sarvam_request_and_fallback():
             return np.zeros(5, dtype="<i2")
 
     assert len(FallbackTTS(down, Local()).synthesize("Hello", "en")) == 5
+
+
+def test_every_english_line_can_be_prerecorded():
+    import itertools
+
+    from app.message import Step, all_english_lines, english_line
+
+    lines = set(all_english_lines("Anil"))
+    for key, again, urgent, question in itertools.product(
+            ("ask_name_reason", "ask_reason", "ask_name", "goodbye"),
+            (False, True), (False, True), (False, True)):
+        assert english_line(Step(key, key == "goodbye", None, urgent, question, again),
+                            "Anil") in lines
+
+
+def test_prerecorded_lines_play_and_others_fall_back(tmp_path):
+    import numpy as np
+
+    from app.audio import write_wav
+    from app.tts import PrerecordedTTS, line_path
+
+    write_wav(line_path(tmp_path, "Thank you.  Goodbye.", "en"), np.full(400, 7, dtype="<i2"))
+
+    class Live:
+        def synthesize(self, text, language):
+            return np.zeros(3, dtype="<i2")
+
+    tts = PrerecordedTTS(tmp_path, Live())
+    assert len(tts.synthesize("Thank you. Goodbye.", "en")) == 400   # spacing ignored
+    assert len(tts.synthesize("Something new.", "en")) == 3
+    assert (tts.hits, tts.misses) == (1, 1)
+
+
+def test_make_voice_lists_what_the_server_says(tmp_path):
+    import importlib.util
+    from pathlib import Path
+
+    from app.config import Config
+    from app.tts import PhraseCache
+
+    spec = importlib.util.spec_from_file_location(
+        "make_voice", Path(__file__).resolve().parents[2] / "tools" / "make_voice.py")
+    mv = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mv)
+    cfg = Config()
+    todo = set(mv.lines_to_record(cfg, "Anil"))
+
+    class Rec:
+        def __init__(self):
+            self.said = []
+
+        def synthesize(self, text, language):
+            import numpy as np
+            self.said.append((language, text))
+            return np.zeros(10, dtype="<i2")
+
+    rec = Rec()
+    cache = PhraseCache(rec, tmp_path, "Anil", languages=cfg.call.phrase_languages,
+                        reply_languages=cfg.call.scripted_languages)
+    cache.build(cfg.call.languages)
+    cache.get("greeting_short", "multi")
+    assert set(rec.said) <= todo
