@@ -448,7 +448,8 @@ class Session:
             while True:
                 wait = None
                 if not spoken and not filler_played:
-                    wait = max(0.0, filler_s - (time.monotonic() - t_eos))
+                    # Only a slow language model earns the filler, not slow transcription.
+                    wait = max(0.0, filler_s - (time.monotonic() - t_llm))
                 try:
                     chunk = await asyncio.wait_for(it.__anext__(), wait) if wait is not None \
                         else await it.__anext__()
