@@ -62,7 +62,8 @@ class OllamaLLM:
     async def warm(self) -> None:
         """Loads the model into GPU memory so the first call is not slow."""
         await self._client.post(f"{self.url}/api/generate",
-                                json={"model": self.model, "keep_alive": -1})
+                                json={"model": self.model, "keep_alive": -1,
+                                      "prompt": "Hello", "options": {"num_predict": 1}})
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -100,8 +101,24 @@ class SentenceSplitter:
         return rest
 
 
+# Small models write the end marker loosely: [END], [end], <END>, (END), END.
+_END = re.compile(r"[\[<(]\s*end\s*[\]>)]|\bEND\b", re.I)
+_END_BARE = re.compile(r"\bEND\b")
+
+
 def strip_end_token(text: str) -> tuple[str, bool]:
-    """Removes [END] from a sentence. Returns (text, ended)."""
-    if END_TOKEN in text:
-        return text.replace(END_TOKEN, "").strip(), True
-    return text, False
+    """Removes the end-of-call marker from a sentence. Returns (text, ended)."""
+    found = False
+
+    def drop(m: re.Match) -> str:
+        nonlocal found
+        # A bare "end" only counts in capitals, so "the end of the month" is safe.
+        if m.group(0).strip().lower() == "end" and not _END_BARE.fullmatch(m.group(0)):
+            return m.group(0)
+        found = True
+        return ""
+
+    out = _END.sub(drop, text)
+    if not found:
+        return text, False
+    return " ".join(out.split()).strip(), True

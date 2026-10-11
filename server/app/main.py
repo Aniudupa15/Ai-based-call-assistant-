@@ -152,7 +152,14 @@ async def _retention(s) -> None:
 
 
 async def _warm(s) -> None:
-    """Loads the language model and builds the phrase cache in the background."""
+    """Loads the models and builds the phrase cache in the background, so the first
+    caller does not wait for any of it."""
+    stt_warm = getattr(s.engines.stt, "warm", None)
+    if stt_warm:
+        try:
+            await asyncio.to_thread(stt_warm)
+        except Exception as e:
+            log.warning("could not warm speech-to-text: %s", e)
     warm = getattr(s.engines.llm, "warm", None)
     if warm:
         try:

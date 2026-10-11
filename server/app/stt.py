@@ -49,7 +49,7 @@ class WhisperSTT:
     def _run(self, audio16k: np.ndarray, language: str | None):
         segments, info = self.model.transcribe(
             audio16k, language=language, beam_size=1, vad_filter=False,
-            condition_on_previous_text=False)
+            condition_on_previous_text=False, without_timestamps=True)
         segs = list(segments)
         text = " ".join(s.text.strip() for s in segs).strip()
         conf = float(math.exp(sum(s.avg_logprob for s in segs) / len(segs))) if segs else None
@@ -132,9 +132,43 @@ class IndicConformerSTT:
 class RoutingSTT:
     """Whisper for detection and English; IndicConformer for Hindi and Kannada."""
 
+    # IndicConformer on a slow CPU can take many seconds a turn; past this for a
+    # 3-second test clip, Whisper handles Hindi and Kannada instead.
+    INDIC_MAX_S = 2.5
+
     def __init__(self, whisper: WhisperSTT, indic: IndicConformerSTT | None):
         self.whisper = whisper
         self.indic = indic
+        self.timings: dict[str, float] = {}
+
+    def warm(self) -> dict[str, float]:
+        """Runs each model once at start-up: the first run is always slow (CUDA set-up,
+        ONNX graph optimisation), and it should not be a caller who waits for it."""
+        import time
+
+        clip = (np.random.default_rng(0).normal(0, 0.02, 48000)).astype(np.float32)
+        t0 = time.monotonic()
+        self.whisper.detect_language(clip)
+        self.whisper.transcribe(clip, "en")
+        self.timings["whisper_s"] = round(time.monotonic() - t0, 2)
+        if self.indic is not None:
+            try:
+                self.indic.transcribe(clip, "kn")          # first run: set-up
+                t0 = time.monotonic()
+                self.indic.transcribe(clip, "kn")
+                took = time.monotonic() - t0
+                self.timings["indic_s"] = round(took, 2)
+                if took > self.INDIC_MAX_S:
+                    log.warning("IndicConformer needs %.1f s for 3 s of audio on this machine; "
+                                "too slow for a live call, so Whisper transcribes Hindi and "
+                                "Kannada. Set models.stt_indic_device: cuda if the GPU has "
+                                "room, or stt_indic: \"\" to skip loading it.", took)
+                    self.indic = None
+            except Exception as e:
+                log.warning("IndicConformer test run failed (%s); Whisper takes over", e)
+                self.indic = None
+        log.info("speech-to-text warm: %s", self.timings)
+        return self.timings
 
     def detect_language(self, audio16k: np.ndarray) -> dict[str, float]:
         return self.whisper.detect_language(audio16k)
