@@ -38,9 +38,10 @@ class FakeSTT:
 class FakeLLM:
     """Asks for name and purpose, then says goodbye; summarises by keywords."""
 
-    def __init__(self, replies: list[str] | None = None, chunk: int = 7):
+    def __init__(self, replies: list[str] | None = None, chunk: int = 7, delay: float = 0.0):
         self.replies: deque[str] = deque(replies or [])
         self.chunk = chunk
+        self.delay = delay
         self.json_calls: list[str] = []
 
     async def stream_chat(self, messages: list[dict]) -> AsyncIterator[str]:
@@ -52,6 +53,9 @@ class FakeLLM:
                      if user_turns < 2 else
                      "Thank you, I will pass your message on. Goodbye. [END]")
         for i in range(0, len(reply), self.chunk):
+            if self.delay:
+                import asyncio
+                await asyncio.sleep(self.delay)
             yield reply[i:i + self.chunk]
 
     async def complete_json(self, messages: list[dict]) -> str:

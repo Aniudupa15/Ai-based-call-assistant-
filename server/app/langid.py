@@ -24,7 +24,7 @@ class LanguageChoice:
 
 def choose_language(probs: dict[str, float] | None, allowed: list[str], current: str,
                     hint: str | None, turn_index: int,
-                    threshold: float = 0.6) -> LanguageChoice:
+                    threshold: float = 0.7) -> LanguageChoice:
     if turn_index == 0 and hint and hint in allowed:
         return LanguageChoice(hint, True)
     if not probs:
@@ -32,10 +32,16 @@ def choose_language(probs: dict[str, float] | None, allowed: list[str], current:
     scoped = {k: v for k, v in probs.items() if k in allowed}
     if not scoped:
         return LanguageChoice(current, False)
+    top = max(probs.items(), key=lambda kv: kv[1])[0]
+    if top not in allowed:
+        # e.g. Kannada misheard as Sinhala on a phone line: stay put rather than guess.
+        return LanguageChoice(current, False)
     total = sum(scoped.values()) or 1.0
     best, p = max(scoped.items(), key=lambda kv: kv[1])
     p /= total
-    if p >= threshold:
+    if best == current:
+        return LanguageChoice(current, True)
+    if p >= threshold:            # switch only when fairly sure
         return LanguageChoice(best, True)
     return LanguageChoice(current, False)
 
