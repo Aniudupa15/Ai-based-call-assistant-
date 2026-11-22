@@ -1,0 +1,4 @@
+Translate each numbered phone-call line into plain English. Keep names and numbers as they are.
+Return only JSON: {{"lines": [{{"seq": <number>, "en": "<English>"}}]}}
+
+{lines}

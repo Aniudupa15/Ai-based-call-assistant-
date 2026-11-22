@@ -1,0 +1,43 @@
+# Secrets: real configs stay local, the *.example.* files are committed
+server/config.yaml
+firmware/main/config.h
+
+# Server runtime data
+server/data/
+server/voices/
+sdcard/
+*.db
+*.db-journal
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.venv-voice/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# ESP-IDF
+firmware/build/
+firmware/test/build/
+firmware/test/host/test_runner
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/test/sdkconfig
+firmware/managed_components/
+firmware/dependencies.lock
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk
+*.keystore
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

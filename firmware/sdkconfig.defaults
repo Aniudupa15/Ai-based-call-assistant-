@@ -1,0 +1,13 @@
+# FreeRTOS tick at 1 kHz for 20 ms audio timing
+CONFIG_FREERTOS_HZ=1000
+# Long file names on the microSD card
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=64
+# Larger main task stack for start-up
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+# Wi-Fi: stay connected, no power save (it adds audio latency)
+CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE=n
+# Watchdog
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+# Wi-Fi, WebSocket, HTTP and FAT need more than the default 1 MB app partition
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y

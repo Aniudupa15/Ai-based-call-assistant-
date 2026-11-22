@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The PC is reached over plain HTTP on the home network or inside the WireGuard
+     tunnel, which already encrypts the traffic. No public host is contacted. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

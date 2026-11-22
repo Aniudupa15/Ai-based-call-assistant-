@@ -1,0 +1,8 @@
+# Enough to run the server with the fake backend and the test suite; no GPU needed.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+pyyaml>=6.0
+numpy>=1.26
+httpx>=0.27
+pytest>=8.0
